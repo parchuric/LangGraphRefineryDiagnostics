@@ -1,0 +1,48 @@
+/* filepath: c:\\Projects\\GithubLocal\\pg-graph\\src\\app\\app.component.css */
+.container {
+  display: flex;
+  flex-direction: row;
+  padding: 10px;
+  gap: 10px; /* Adds space between editor and visualization panels */
+  height: calc(100vh - 64px - 20px); /* Full viewport height minus toolbar (64px) and padding (2*10px) */
+}
+
+.editor-panel {
+  width: 30%; /* Adjust width as needed */
+  min-width: 300px; /* Minimum width for the editor */
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+  overflow-y: auto; /* Add scroll if content overflows */
+  display: flex; /* Added to allow app-graph-editor to flex if needed */
+  flex-direction: column; /* Added */
+}
+
+.visualization-panel {
+  flex-grow: 1; /* Allow this panel to take up remaining horizontal space */
+  flex-basis: 0; /* Ensure flex-grow works effectively */
+  min-width: 0; /* Prevent overflow if content is too wide */
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  display: flex; 
+  flex-direction: column; 
+}
+
+/* Ensure the graph visualization component itself and its container take up available space */
+app-graph-visualization {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Prevent flex item from growing indefinitely */
+}
+
+/* You might need to target the specific div inside graph-visualization.component.html 
+   if it doesn't automatically expand. For example, if it has an ID like #visNetwork */
+/* 
+app-graph-visualization > div#visNetwork {
+    flex-grow: 1 !important; 
+    height: 100% !important;
+}
+*/

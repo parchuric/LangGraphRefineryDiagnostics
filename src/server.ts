@@ -8,11 +8,16 @@ import express from 'express';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Import the bootstrap function from main.server.ts
+// TypeScript will handle the .ts -> .js/.mjs resolution during compilation
+import bootstrap from './main.server';
+
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
 const app = express();
-const angularApp = new AngularNodeAppEngine();
+// Pass the bootstrap function to the AngularNodeAppEngine
+const angularApp = new AngularNodeAppEngine(); // Reverted: Constructor takes no arguments
 
 /**
  * Example Express Rest API endpoints can be defined here.

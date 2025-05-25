@@ -1,0 +1,120 @@
+<div class="editor-container">
+  <h3>Graph Editor</h3>
+
+  <!-- Create Node Form -->
+  <div class="form-section">
+    <h4>Create New Node</h4>
+    <div>
+      <label for="newNodeLabel">Label:</label>
+      <input id="newNodeLabel" type="text" [(ngModel)]="newNodeLabel" placeholder="Enter node label">
+    </div>
+    <div>
+      <label for="newNodeProps">Properties (JSON):</label>
+      <textarea id="newNodeProps" [(ngModel)]="newNodePropertiesString" placeholder='{"name": "My Node", "type": "default"}'></textarea>
+    </div>
+    <button (click)="createNode()">Create Node</button>
+  </div>
+
+  <hr>
+
+  <!-- Select Node for Update/Delete -->
+  <div class="form-section">
+    <h4>Select Node for Update/Delete</h4>
+    <div>
+      <label for="selectNodeId">Node ID to Select:</label>
+      <input #nodeIdInput id="selectNodeId" type="text" [(ngModel)]="selectedNodeId" placeholder="Enter ID or click node in graph">
+      <button (click)="selectNodeForUpdate(nodeIdInput.value)">Fetch Node Details</button>
+    </div>
+  </div>
+
+  <!-- Update/Delete Selected Node -->
+  <div *ngIf="selectedNodeId !== null" class="form-section">
+    <h4>Modify Selected Node (ID: {{ selectedNodeId }})</h4>
+    <div>
+      <label for="updateNodeLabel">Label:</label>
+      <input id="updateNodeLabel" type="text" [(ngModel)]="updateNodeLabel" placeholder="Enter new node label">
+    </div>
+    <div>
+      <label for="updateNodeProps">Properties (JSON):</label>
+      <textarea id="updateNodeProps" [(ngModel)]="updatePropertiesString" placeholder='{"status": "updated", "value": 100}'></textarea>
+    </div>
+    <button (click)="updateSelectedNode()">Update Node</button>
+    <button (click)="deleteSelectedNode()" class="delete-button">Delete Node</button>
+  </div>
+  <div *ngIf="selectedNodeId === null">
+    <p><i>Select a node by its ID or by clicking it in the graph to enable update/delete operations.</i></p>
+  </div>
+
+</div>
+
+<hr style="margin: 20px 0;">
+
+<!-- Edge Management Forms -->
+<div class="editor-container">
+  <h3>Edge Editor</h3>
+
+  <!-- Create Edge Form -->
+  <div class="form-section">
+    <h4>Create New Edge</h4>
+    <div>
+      <label for="newEdgeFromId">From Node ID:</label>
+      <input id="newEdgeFromId" type="text" [(ngModel)]="newEdgeFromId" placeholder="Source Node ID (e.g., 1.23)">
+    </div>
+    <div>
+      <label for="newEdgeToId">To Node ID:</label>
+      <input id="newEdgeToId" type="text" [(ngModel)]="newEdgeToId" placeholder="Target Node ID (e.g., 1.24)">
+    </div>
+    <div>
+      <label for="newEdgeLabel">Label:</label>
+      <input id="newEdgeLabel" type="text" [(ngModel)]="newEdgeLabel" placeholder="Enter edge label (e.g., CONNECTS_TO)">
+    </div>
+    <div>
+      <label for="newEdgeProps">Properties (JSON):</label>
+      <textarea id="newEdgeProps" [(ngModel)]="newEdgePropertiesString" placeholder='{"weight": 10, "type": "data_flow"}'></textarea>
+    </div>
+    <button (click)="createEdge()">Create Edge</button>
+  </div>
+
+  <hr>
+
+  <!-- Select Edge for Update/Delete -->
+  <div class="form-section">
+    <h4>Select Edge for Update/Delete</h4>
+    <div>
+      <label for="selectEdgeId">Edge ID to Select:</label>
+      <input #edgeIdInput id="selectEdgeId" type="text" [(ngModel)]="selectedEdgeId" placeholder="Enter ID or click edge in graph">
+      <button (click)="selectEdgeForUpdate(edgeIdInput.value)">Fetch Edge Details</button>
+    </div>
+  </div>
+
+  <!-- Update/Delete Selected Edge -->
+  <div *ngIf="selectedEdgeId !== null" class="form-section">
+    <h4>Modify Selected Edge (ID: {{ selectedEdgeId }})</h4>
+    <div>
+      <label for="updateEdgeLabel">Label:</label>
+      <input id="updateEdgeLabel" type="text" [(ngModel)]="updateEdgeLabel" placeholder="Enter new edge label">
+    </div>
+    <div>
+      <label for="updateEdgeProps">New Properties (JSON):</label>
+      <textarea id="updateEdgeProps" [(ngModel)]="updateEdgePropertiesString" placeholder='{"status": "reviewed", "priority": 1}'></textarea>
+    </div>
+    <button (click)="updateSelectedEdge()">Update Edge</button>
+    <button (click)="deleteSelectedEdge()" class="delete-button">Delete Edge</button>
+  </div>
+  <div *ngIf="selectedEdgeId === null">
+    <p><i>Select an edge by its ID or by clicking it in the graph to enable update/delete operations.</i></p>
+  </div>
+
+  <hr style="margin: 20px 0;">
+
+  <!-- Search Section -->
+  <div class="form-section">
+    <h4>Search Graph</h4>
+    <div>
+      <label for="searchTerm">Search Term:</label>
+      <input id="searchTerm" type="text" [(ngModel)]="searchTerm" placeholder="Enter node/edge label or property value">
+      <button (click)="onSearch()">Search</button>
+    </div>
+  </div>
+
+</div>
