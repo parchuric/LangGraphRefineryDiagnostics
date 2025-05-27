@@ -197,7 +197,7 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
     *   **Response Body:** JSON object of the created node, including its auto-generated graph ID.
         ```json
         {
-          "id": "10133099161583620", // Example graph ID
+          "id": "10133099161583620", 
           "label": "WorkOrder",
           "properties": {
             "work_order_id": "WO12345",
@@ -225,9 +225,9 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
 *   **Update Node:** `PUT /api/node/:id`
     *   **URL Parameter:** `:id` - The graph ID of the node to update.
     *   **Request Body:** JSON object with properties to update. Can include `label` and/or `properties`.
-        ```json
+        ```javascript
         {
-          "label": "UpdatedWorkOrderLabel", // Optional
+          "label": "UpdatedWorkOrderLabel", 
           "properties": {
             "status": "Closed",
             "resolution": "Completed successfully"
@@ -258,10 +258,11 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
 
 *   **Create Edge:** `POST /api/edge`
     *   **Request Body:** JSON object representing the edge to create.
-        ```json
+        ```javascript
+        // 'from' and 'to' fields expect the stringified internal numeric graph IDs of the source and target nodes.
         {
-          "from": "10133099161583618", // Source Node Graph ID (stringified internal numeric ID)
-          "to": "10133099161583620",   // Target Node Graph ID (stringified internal numeric ID)
+          "from": "10133099161583618",
+          "to": "10133099161583620",
           "label": "RELATED_TO",
           "properties": {
             "relationship_type": "dependency",
@@ -270,27 +271,28 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
         }
         ```
     *   **Response Body:** JSON object of the created edge, including its auto-generated graph ID (stringified internal numeric ID).
-        ```json
+        ```javascript
+        // - "id" is the stringified internal numeric graph ID of the created edge.
+        // - "label" (at the root) is the actual agtype label (type) of the edge.
+        // - "title" typically holds a stringified version of properties for display in tooltips.
+        // - A "label" field within "properties" would be a user-defined property, distinct from the agtype edge label.
         {
-          "id": "11258999068426243", // Example graph ID for an edge (stringified internal numeric ID)
+          "id": "11258999068426243",
           "from": "10133099161583618",
           "to": "10133099161583620",
-          "label": "RELATED_TO", // This is the agtype label of the edge
-          "title": "{\n  \"relationship_type\": \"dependency\",\n  \"strength\": 0.75\n}", // Stringified properties for tooltip
+          "label": "RELATED_TO",
+          "title": "{\\n  \\"relationship_type\\": \\"dependency\\",\\n  \\"strength\\": 0.75\\n}",
           "properties": {
             "relationship_type": "dependency",
             "strength": 0.75
-            // If the edge label was set as a property, it would also appear here, e.g., "label": "RELATED_TO_AS_PROP"
           }
         }
         ```
-    *   **Angular Service Method:** `GraphDataService.createEdge(edgeData: Omit<VisEdge, 'id'>)`
-    *   **Backend Handler:** `createEdgeHandler`
 
 *   **Read Edge:** `GET /api/edge/:id`
     *   **URL Parameter:** `:id` - The graph ID of the edge to retrieve (stringified internal numeric ID, e.g., "11258999068426243").
     *   **Response Body:** JSON object of the requested edge.
-        ```json
+        ```javascript
         {
           "id": "11258999068426243",
           "from": "10133099161583618",
@@ -299,37 +301,32 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
           "properties": { /* ... */ }
         }
         ```
-    *   **Angular Service Method:** `GraphDataService.getEdge(id: string)`
-    *   **Backend Handler:** `getEdgeByIdHandler`
 
 *   **Update Edge:** `PUT /api/edge/:id`
     *   **URL Parameter:** `:id` - The graph ID of the edge to update (stringified internal numeric ID).
     *   **Request Body:** JSON object with properties to update. 
         *Note: To change the edge's fundamental `label` (its type in AGE), you typically delete and recreate the edge with the new label. The `properties` can include a `label` field for display purposes, but this won't change the underlying AGE edge type if you are just updating properties.*
-        ```json
+        ```javascript
+        // The "label" field within "properties" updates a display label,
+        // not the underlying agtype (graph) label of the edge.
         {
           "properties": {
             "strength": 0.95,
             "status": "verified",
-            "label": "Updated Display Label" // This updates a property named 'label'
+            "label": "Updated Display Label"
           }
         }
         ```
-    *   **Response Body:** JSON object of the updated edge.
-    *   **Angular Service Method:** `GraphDataService.updateEdge(id: string, edgeData: Partial<Omit<VisEdge, 'from' | 'to'>>)`
-    *   **Backend Handler:** `updateEdgeHandler`
 
 *   **Delete Edge:** `DELETE /api/edge/:id`
     *   **URL Parameter:** `:id` - The graph ID of the edge to delete (stringified internal numeric ID).
     *   **Response Body:** JSON object confirming deletion.
-        ```json
+        ```javascript
         {
           "message": "Edge deleted successfully",
-          "id": "11258999068426243" // The ID of the deleted edge
+          "id": "11258999068426243"
         }
         ```
-    *   **Angular Service Method:** `GraphDataService.deleteEdge(id: string)`
-    *   **Backend Handler:** `deleteEdgeHandler`
 
 ### Search Functionality
 
