@@ -216,7 +216,7 @@ The backend (`backend/src/server.ts`) provides the following RESTful API endpoin
         {
           "id": "10133099161583620",
           "label": "WorkOrder",
-          "properties": { /* ... */ }
+          "properties": { }
         }
         ```
     *   **Angular Service Method:** `GraphDataService.getNode(id: string | number)`
