@@ -1,3 +1,4 @@
+console.log('########## EXECUTING backend/src/server.ts ##########');
 import express, { Express, RequestHandler, Response } from 'express'; // Added Response for explicit typing
 import { Pool, PoolConfig } from 'pg';
 import cors from 'cors';
@@ -17,7 +18,7 @@ app.use(express.json());
 
 // Type definitions for Vis Network (matching frontend)
 interface VisNode {
-  id: number | string;
+  id: string; // Changed from number | string
   label?: string;
   title?: string;
   group?: string;
@@ -28,9 +29,9 @@ interface VisNode {
 }
 
 interface VisEdge {
-  id?: number | string; // Optional, as it might be derived or not always present
-  from: number | string;
-  to: number | string;
+  id?: string; // Changed from number | string, and ensure it's always string if present
+  from: string; // Changed from number | string
+  to: string;   // Changed from number | string
   label?: string;
   title?: string;
   properties?: Record<string, any>;
@@ -79,6 +80,11 @@ if (fs.existsSync(caBundlePath)) {
     servername: process.env.DB_HOST 
   };
 }
+// To disable SSL/TLS, set ssl to false or an object that results in it being disabled.
+// For node-postgres, setting ssl: false should disable TLS.
+// If connecting to a local instance or one that doesn't require/enforce SSL:
+// const sslOptions: PoolConfig['ssl'] = false; 
+// console.log("SSL/TLS is explicitly disabled for the database connection.");
 // --- End SSL Configuration ---
 
 // Database connection setup
@@ -91,76 +97,155 @@ const pool = new Pool({
   ssl: sslOptions, // Use the configured SSL settings
 });
 
-// Helper to parse AGE agtype values (simplified, expand as needed)
+// Helper to parse AGE agtype values
+
+// Intermediate type for parsed agtype_out string
+interface ParsedAgEntity {
+  id: number; // This is the numeric internal ID
+  label: string;
+  properties: Record<string, any>;
+  // For edges
+  start_id?: number; // Numeric internal ID
+  end_id?: number;   // Numeric internal ID
+}
+
+function parseAgtypeOutputString(agtypeString: string): ParsedAgEntity | null {
+  console.log('parseAgtypeOutputString: Received input:', agtypeString); 
+  if (!agtypeString || typeof agtypeString !== 'string') {
+    console.error('parseAgtypeOutputString: Invalid agtypeString input:', agtypeString);
+    return null;
+  }
+  try {
+    const trimmedString = agtypeString.trim();
+    console.log('parseAgtypeOutputString: Trimmed input:', trimmedString); 
+    // Use the simpler regex from SulfurGraphExplorer
+    const jsonString = trimmedString.replace(/::\w+$/, ''); 
+    console.log('parseAgtypeOutputString: String after regex replace (attempting to parse as JSON):', jsonString);
+
+    const parsed = JSON.parse(jsonString);
+
+    // Basic validation
+    if (parsed === null || typeof parsed !== 'object') {
+        console.error('parseAgtypeOutputString: Parsed data is not an object or is null:', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+        return null;
+    }
+    if (typeof parsed.id !== 'number' || typeof parsed.label !== 'string' || typeof parsed.properties !== 'object') {
+        console.error('parseAgtypeOutputString: Parsed object missing required fields (id (number), label (string), properties (object)):', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+        return null;
+    }
+    // For edges, start_id and end_id are expected
+    // Check trimmedString for '::edge' as jsonString has it removed
+    if (trimmedString.includes('::edge') || ('start_id' in parsed || 'end_id' in parsed)) { 
+        if (typeof parsed.start_id !== 'number' || typeof parsed.end_id !== 'number') {
+            console.error('parseAgtypeOutputString: Parsed edge object has invalid or missing start_id/end_id (must be numbers):', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+            return null;
+        }
+    }
+    console.log('parseAgtypeOutputString: Successfully parsed:', parsed);
+    return parsed as ParsedAgEntity;
+  } catch (e) {
+    // Log the string that failed to parse along with the original agtype string
+    const stringThatFailedParse = agtypeString.trim().replace(/::\w+$/, '');
+    console.error('parseAgtypeOutputString: Error during JSON.parse or validation. Original agtypeString:', agtypeString, 'Attempted to parse (jsonString):', stringThatFailedParse, 'Error:', e);
+    return null;
+  }
+}
+
 
 // Define a type for the JSON response from agtype_to_json
+// NO LONGER USED - Replaced by ParsedAgEntity and manual parsing
+/*
 interface AgJsonResponseBase {
-  id: string | number; // Changed to allow number, as raw JSON might have numeric IDs
+  id: string; 
   label: string;
   properties: Record<string, any>;
 }
 interface AgJsonNodeResponse extends AgJsonResponseBase {}
 interface AgJsonEdgeResponse extends AgJsonResponseBase {
-  start_id: string; // graphid string
-  end_id: string;   // graphid string
+  start_id: string; 
+  end_id: string;   
 }
 type AgJsonResponse = AgJsonNodeResponse | AgJsonEdgeResponse;
+*/
 
 // REMOVE THE parseAgTypeValue function as it's no longer needed
 // function parseAgTypeValue(value: string): AgTypeNode | AgTypeEdge | null { ... }
 
 // Type for rows from node/edge queries
 interface AgEntityRow {
-  ag_vertex_string?: string; // Changed from ag_vertex_json
-  ag_edge_string?: string;   // Changed from ag_edge_json
-  // AGE specific id representation if different from properties
-  id?: any; // Adjust if AGE returns id directly in a specific format
-  label?: string; // Adjust if AGE returns label directly
-  properties?: string; // JSON string of properties
-  start_id?: any; // For edges
-  end_id?: any; // For edges
-  start_label?: string; // For edges
-  end_label?: string; // For edges
+  ag_vertex_string_out?: string; // Changed from ag_vertex_jsonb
+  ag_edge_string_out?: string;   // Changed from ag_edge_jsonb
+  // Fields for direct values if not using jsonb objects (e.g. for count or simple returns)
+  node_count?: any; // Keep for count queries
+  deleted_node_id?: string; // Keep for delete confirmation
+  deleted_edge_id?: string; // Keep for delete confirmation
+  // Removed id, label, properties, start_id, end_id, start_label, end_label as they will be in the parsed string
 }
 
 // Function to test database connection and AGE setup
 async function testDatabaseConnection() {
   let client;
+  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph'; // Define graphName here
   try {
-    client = await pool.connect();
-    console.log('Successfully connected to the database via pg.Pool!');
+    client = await pool.connect(); // Initialize client
+    console.log('testDatabaseConnection: Successfully connected to database.');
+    await client.query("SET search_path = ag_catalog, '$user', public;"); // Set search_path
+    console.log('testDatabaseConnection: search_path set.');
 
-    // Set the search_path to include ag_catalog for AGE functions
-    await client.query("SET search_path = ag_catalog, '$user', public;");
-    console.log("Session search_path set to include ag_catalog.");
-
-    const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
-
-    // Check if the graph already exists
-    const checkGraphExistsQuery = `SELECT 1 FROM ag_catalog.ag_graph WHERE name = '${graphName}';`;
-    const graphExistsResult = await client.query(checkGraphExistsQuery);
-
-    if (graphExistsResult.rowCount === 0) {
-      console.log(`Graph '${graphName}' does not exist. Attempting to create it.`);
-      // Explicitly call create_graph from ag_catalog schema
-      await client.query(`SELECT ag_catalog.create_graph('${graphName}');`);
-      console.log(`Graph '${graphName}' created successfully.`);
-    } else {
-      console.log(`Graph '${graphName}' already exists.`);
+    // Test ag_catalog.age_version()
+    /* // Commenting out due to function not existing in Azure AGE 1.5.0
+    try {
+      const versionResult = await client.query("SELECT ag_catalog.age_version();");
+      console.log('testDatabaseConnection: ag_catalog.age_version() result:', versionResult.rows);
+    } catch (e) {
+      console.error('testDatabaseConnection: Error calling ag_catalog.age_version():', e);
     }
+    */
 
-    // Test Cypher query
-    const cypherQuery = `SELECT * from cypher('${graphName}', $$ MATCH (n) RETURN n $$) as (n agtype);`;
+    const cypherQuery = `SELECT * from cypher('${graphName}', $$ MATCH (n) RETURN n LIMIT 1 $$) as (n agtype);`; // Added LIMIT 1
     console.log(`Executing test Cypher query: ${cypherQuery}`);
     const res = await client.query(cypherQuery);
     console.log('Test Cypher query executed. Results:', res.rows);
+    if (res.rows.length > 0 && res.rows[0].n) { // Check res.rows[0].n
+      console.log('Successfully fetched data with AGE. Raw agtype:', res.rows[0].n);
+      // Test ag_catalog.agtype_to_json() with the fetched agtype in a combined query
+      // Modify this test to use agtype_out and the new parser
+      try {
+        const agtypeOutTestQuery = `
+          WITH graph_data AS (
+            SELECT v FROM cypher($$${graphName}$$, $$ MATCH (n:Person) WHERE n.name = 'Alice' RETURN n LIMIT 1 $$) AS (v agtype)
+          )
+          SELECT ag_catalog.agtype_out(graph_data.v) AS ag_vertex_string_out FROM graph_data
+          WHERE graph_data.v IS NOT NULL;
+        `;
+        console.log(`Executing agtype_out test query: ${agtypeOutTestQuery}`);
+        const conversionResult = await client.query<{ ag_vertex_string_out: string }>(agtypeOutTestQuery);
+        
+        if (conversionResult.rows.length > 0 && conversionResult.rows[0].ag_vertex_string_out) {
+            console.log('testDatabaseConnection: ag_catalog.agtype_out() result string:', conversionResult.rows[0].ag_vertex_string_out);
+            const parsedTestNode = parseAgtypeOutputString(conversionResult.rows[0].ag_vertex_string_out);
+            console.log('testDatabaseConnection: Parsed test node from agtype_out string:', parsedTestNode);
+            if (parsedTestNode) {
+                console.log('testDatabaseConnection: Successfully parsed agtype_out string.');
+            } else {
+                console.warn('testDatabaseConnection: Failed to parse agtype_out string for test node.');
+            }
+        } else {
+            console.warn('testDatabaseConnection: agtype_out test query returned no rows or no string. This might be because the MATCH subquery found no data.');
+        }
+      } catch (e) {
+        console.error('testDatabaseConnection: Error calling ag_catalog.agtype_out() or parsing in test query:', e);
+      }
+    } else {
+      console.log('AGE test query ran but returned no data (this might be okay if graph is empty).');
+    }
 
   } catch (err) {
     console.error('Error during database/AGE test:', err);
   } finally {
     if (client) {
       client.release();
-      console.log('Database client released.');
+      console.log('Test Database Connection: Client released.');
     }
   }
 }
@@ -182,31 +267,76 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     client = await pool.connect();
     console.log('GET /api/graph: Successfully connected to database.');
 
-    // Set search_path for AGE
+    // Log current_user and session_user
+    try {
+        const userQueryResult = await client.query("SELECT current_user, session_user;");
+        console.log('GET /api/graph: DB User Context:', userQueryResult.rows[0]);
+    } catch (e) {
+        console.error('GET /api/graph: Error querying current_user/session_user:', e);
+    }
+
     await client.query("SET search_path = ag_catalog, '$user', public;");
-    console.log('GET /api/graph: search_path set.');
+    console.log('GET /api/graph: search_path set command executed.');
+
+    // Log the actual search_path
+    try {
+        const showPathResult = await client.query("SHOW search_path;");
+        console.log('GET /api/graph: Current search_path from SHOW search_path:', showPathResult.rows[0].search_path);
+    } catch (e) {
+        console.error('GET /api/graph: Error executing SHOW search_path:', e);
+    }
+
+    // Additional Diagnostics (pg_extension and shared_preload_libraries are still useful)
+    try {
+        const pgExtensionResult = await client.query("SELECT * FROM pg_extension WHERE extname = 'age';");
+        console.log('GET /api/graph: pg_extension query result for "age":', pgExtensionResult.rows);
+        if (pgExtensionResult.rows.length > 0) {
+            const extNamespaceOid = pgExtensionResult.rows[0].extnamespace;
+            console.log(`GET /api/graph: AGE extension namespace OID: ${extNamespaceOid}`);
+            const namespaceCheckResult = await client.query("SELECT nspname FROM pg_namespace WHERE oid = $1;", [extNamespaceOid]);
+            if (namespaceCheckResult.rows.length > 0) {
+                console.log(`GET /api/graph: Namespace name for OID ${extNamespaceOid}:`, namespaceCheckResult.rows[0].nspname);
+            } else {
+                console.log(`GET /api/graph: No namespace found for OID ${extNamespaceOid}.`);
+            }
+        }
+    } catch (e) {
+        console.error('GET /api/graph: Error querying pg_extension:', e);
+    }
+
+    try {
+        const sharedLibrariesResult = await client.query("SHOW shared_preload_libraries;");
+        console.log('GET /api/graph: shared_preload_libraries:', sharedLibrariesResult.rows);
+    } catch (e) {
+        console.error('GET /api/graph: Error executing SHOW shared_preload_libraries (this might be a permissions issue, which is okay):', e);
+    }
+    // End Additional Diagnostics
+
+    // Pre-flight check: Execute a simple Cypher query to ensure cypher() function is accessible
 
     // Fetch nodes
     const nodesQuery = `
-      SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string
+      SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
       FROM cypher($$${graphName}$$, $$
           MATCH (v)
           RETURN v
       $$) AS v_data(v agtype);
     `;
     const nodesResult = await client.query<AgEntityRow>(nodesQuery);
-    console.log(`GET /api/graph: Fetched ${nodesResult.rowCount} raw node entries.`);
+    console.log(`GET /api/graph: Fetched ${nodesResult.rowCount} raw node entries (as agtype strings).`);
 
     const nodes: VisNode[] = nodesResult.rows.map((row: AgEntityRow): VisNode | null => {
-      if (!row.ag_vertex_string) return null;
+      if (!row.ag_vertex_string_out) return null;
       try {
-        const agtypeString = row.ag_vertex_string;
-        const jsonString = agtypeString.replace(/::\w+$/, '');
-        const parsed = JSON.parse(jsonString) as AgJsonNodeResponse; // parsed.id can be string or number
+        const parsed = parseAgtypeOutputString(row.ag_vertex_string_out);
+        if (!parsed) {
+            console.error("GET /api/graph: Failed to parse node string:", row.ag_vertex_string_out);
+            return null;
+        }
                         
         return {
-          id: String(parsed.id), // Ensure node ID is a string
-          label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id), // Also stringify ID if used as label
+          id: String(parsed.id), // Ensure ID is a string for VisNode
+          label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id),
           title: JSON.stringify(parsed.properties, null, 2),
           group: parsed.label,
           properties: parsed.properties,
@@ -220,39 +350,41 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
 
     // Fetch edges
     const edgesQuery = `
-      SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string
+      SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string_out
       FROM cypher($$${graphName}$$, $$
           MATCH ()-[e]->()
           RETURN e
       $$) AS e_data(e agtype);
     `;
     const edgesResult = await client.query<AgEntityRow>(edgesQuery);
-    console.log(`GET /api/graph: Fetched ${edgesResult.rowCount} raw edge entries.`);
+    console.log(`GET /api/graph: Fetched ${edgesResult.rowCount} raw edge entries (as agtype strings).`);
     
-    const processedEdgeStringIds = new Set<string>(); // For de-duplication using string IDs
+    const processedEdgeStringIds = new Set<string>();
 
     const edges: VisEdge[] = edgesResult.rows.map((row: AgEntityRow): VisEdge | null => {
-      if (!row.ag_edge_string) return null;
+      if (!row.ag_edge_string_out) return null;
       try {
-        const agtypeString = row.ag_edge_string;
-        const jsonString = agtypeString.replace(/::\w+$/, '');
-        const parsed = JSON.parse(jsonString) as AgJsonEdgeResponse; // parsed.id can be string or number
+        const parsed = parseAgtypeOutputString(row.ag_edge_string_out);
+        if (!parsed || typeof parsed.start_id !== 'number' || typeof parsed.end_id !== 'number') {
+            console.error("GET /api/graph: Failed to parse edge string or missing start/end IDs:", row.ag_edge_string_out, parsed);
+            return null;
+        }
         
-        const edgeIdString = String(parsed.id); // Convert to string for consistent de-duplication and usage
+        const edgeIdString = String(parsed.id); // Ensure edge ID is a string
 
         if (processedEdgeStringIds.has(edgeIdString)) {
-          console.warn(`GET /api/graph: Duplicate edge ID (stringified) "${edgeIdString}" found. Original raw ID from DB: ${parsed.id} (type: ${typeof parsed.id}). Skipping this edge.`);
-          return null; // Skip this duplicate edge
+          console.warn(`GET /api/graph: Duplicate edge ID (stringified) "${edgeIdString}" found. Original raw ID from DB: ${parsed.id}. Skipping this edge.`);
+          return null; 
         }
         processedEdgeStringIds.add(edgeIdString);
         
         return {
-          from: String(parsed.start_id), // Ensure from/to are also strings
-          to: String(parsed.end_id),
-          label: parsed.properties.label || parsed.label,
+          id: edgeIdString, // Use the stringified ID for VisEdge
+          from: String(parsed.start_id), // Ensure from ID is a string for VisEdge
+          to: String(parsed.end_id),   // Ensure to ID is a string for VisEdge
+          label: parsed.properties.label || parsed.label, // Prefer property 'label' if exists, else agtype label
           title: JSON.stringify(parsed.properties, null, 2),
           properties: parsed.properties,
-          id: edgeIdString // Use the stringified ID
         };
       } catch (e) {
         console.error("Error processing edge row:", row, e);
@@ -280,8 +412,13 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     const finalEdgeIds = new Set<string>();
     const duplicateEdgeIdsDetected: string[] = [];
     for (const edge of edges) { // edges now have string IDs and are de-duplicated
-      if (edge.id === undefined) continue; 
-      if (finalEdgeIds.has(edge.id as string)) { // edge.id is already string
+      if (edge.id === undefined) {
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        console.error('SERVER-SIDE VERIFICATION: Found an edge with undefined ID AFTER processing:', edge);
+        console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+        continue; // Skip this edge
+      }
+      if (finalEdgeIds.has(edge.id as string)) {
         duplicateEdgeIdsDetected.push(edge.id as string);
       }
       finalEdgeIds.add(edge.id as string);
@@ -328,15 +465,16 @@ type DeleteNodeResponse = { message: string; id: string } | { error: string; det
 // --- Edge CRUD --- 
 
 // Request types for Edge CRUD operations
+// UNCOMMENTED AND WILL BE USED
 interface CreateEdgeBody {
-  from: string; // Source node graph ID (stringified)
-  to: string;   // Target node graph ID (stringified)
+  from: string; // Source node graph ID (stringified internal numeric ID)
+  to: string;   // Target node graph ID (stringified internal numeric ID)
   label: string;
   properties: Record<string, any>;
 }
 
 interface EdgeParams extends ParamsDictionary {
-  id: string; // Edge graph ID (stringified)
+  id: string; // Edge graph ID (stringified internal numeric ID)
 }
 
 interface UpdateEdgeBody {
@@ -344,9 +482,11 @@ interface UpdateEdgeBody {
 }
 
 // Response types for Edge CRUD operations
+// UNCOMMENTED AND WILL BE USED
 type CreateEdgeResponse = VisEdge | { error: string; details?: string };
 type UpdateEdgeResponse = VisEdge | { error: string; details?: string };
 type DeleteEdgeResponse = { message: string; id: string } | { error: string; details?: string };
+
 
 // Create Node
 const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, CreateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
@@ -368,7 +508,7 @@ const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, Cr
     .join(', ');
 
   const cypherQuery = `
-    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string
+    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
     FROM cypher($$${graphName}$$, $$
         CREATE (v:${label} {${propertiesString}})
         RETURN v
@@ -377,27 +517,33 @@ const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, Cr
 
   try {
     client = await pool.connect();
+    console.log('POST /api/node: Successfully connected to database.');
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
     console.log(`POST /api/node: Executing Cypher: ${cypherQuery}`);
     const result = await client.query<AgEntityRow>(cypherQuery);
 
-    if (result.rows.length > 0 && result.rows[0].ag_vertex_string) {
-      const agtypeString = result.rows[0].ag_vertex_string;
-      const jsonString = agtypeString.replace(/::\w+$/, '');
-      const createdAgNode = JSON.parse(jsonString) as AgJsonNodeResponse;
+    if (result.rows.length > 0 && result.rows[0].ag_vertex_string_out) {
+      const createdAgNodeString = result.rows[0].ag_vertex_string_out;
+      const parsedNode = parseAgtypeOutputString(createdAgNodeString);
+
+      if (!parsedNode) {
+        console.error('POST /api/node: Failed to parse created node string:', createdAgNodeString);
+        res.status(500).json({ error: 'Failed to parse created node data from database.' });
+        return;
+      }
 
       const responseNode: VisNode = {
-        id: createdAgNode.id, // graphid string
-        label: createdAgNode.properties.name || createdAgNode.properties.label || createdAgNode.label || createdAgNode.id,
-        title: JSON.stringify(createdAgNode.properties, null, 2),
-        group: createdAgNode.label,
-        properties: createdAgNode.properties,
+        id: String(parsedNode.id),
+        label: parsedNode.properties.name || parsedNode.properties.label || parsedNode.label || String(parsedNode.id),
+        title: JSON.stringify(parsedNode.properties, null, 2),
+        group: parsedNode.label,
+        properties: parsedNode.properties,
       };
       res.status(201).json(responseNode);
     } else {
-      console.error('POST /api/node: Node creation query returned no rows or no ag_vertex_string.');
-      res.status(500).json({ error: 'Failed to create node; query returned no results or no ag_vertex_string.' });
+      console.error('POST /api/node: Node creation query returned no rows or no ag_vertex_string_out.');
+      res.status(500).json({ error: 'Failed to create node; query returned no results or no ag_vertex_string_out.' });
     }
   } catch (error) {
     console.error('POST /api/node: Error creating node:', error);
@@ -408,15 +554,83 @@ const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, Cr
 };
 app.post('/api/node', createNodeHandler);
 
-// Update Node
-const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
-  const nodeIdParam = req.params.id; // This is expected to be the graphid string now
-  const { properties } = req.body;
+// Fetch Node by ID
+const getNodeByIdHandler: RequestHandler<NodeParams, VisNode | { error: string; details?: string }, {}, ParsedQs> = async (req, res): Promise<void> => {
+  const nodeIdParam = req.params.id; 
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
 
-  // Validate nodeIdParam if it needs to match a specific graphid format, e.g., "number.number"
-  // For now, we assume it's passed correctly by the frontend.
+  console.log(`GET /api/node/${nodeIdParam}: Received request for node ID.`);
+
+  let ageNodeInternalId: bigint; // Use BigInt for precision with id()
+  try {
+    const parts = nodeIdParam.split('.');
+    const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
+    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
+    
+  } catch (e) {
+    console.error(`GET /api/node/${nodeIdParam}: Error parsing node ID to BigInt. Original: '${nodeIdParam}'`, e);
+    res.status(400).json({ error: `Could not parse node ID to BigInt for Cypher id() function: ${nodeIdParam}` });
+    return;
+  }
+
+  const getNodeCypherString = `
+    MATCH (v)
+    WHERE id(v) = ${ageNodeInternalId} 
+    RETURN v
+  `;
+
+  const finalSql = `
+    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
+    FROM cypher($$${graphName}$$, $$ ${getNodeCypherString.replace(/\$\$/g, '$$$$')} $$) AS v_data(v agtype);
+  `;
+
+  try {
+    client = await pool.connect();
+    console.log(`GET /api/node/${nodeIdParam}: Successfully connected to database.`);
+    await client.query("SET search_path = ag_catalog, '$user', public;");
+
+    console.log(`GET /api/node/${nodeIdParam}: Executing SQL: ${finalSql}`);
+    const result = await client.query<AgEntityRow>(finalSql);
+
+    if (result.rows.length > 0 && result.rows[0].ag_vertex_string_out) {
+      const agNodeString = result.rows[0].ag_vertex_string_out;
+      const parsedNode = parseAgtypeOutputString(agNodeString);
+
+      if (!parsedNode) {
+        console.error(`GET /api/node/${nodeIdParam}: Failed to parse node string:`, agNodeString);
+        res.status(500).json({ error: 'Failed to parse node data from database.' });
+        return;
+      }
+
+      const responseNode: VisNode = {
+        id: String(parsedNode.id),
+        label: parsedNode.properties.name || parsedNode.properties.label || parsedNode.label || String(parsedNode.id),
+        title: JSON.stringify(parsedNode.properties, null, 2),
+        group: parsedNode.label,
+        properties: parsedNode.properties,
+      };
+      console.log(`GET /api/node/${nodeIdParam}: Node found, returning:`, responseNode);
+      res.json(responseNode);
+    } else {
+      console.warn(`GET /api/node/${nodeIdParam}: Node not found with ID. Query returned no rows or no ag_vertex_string_out.`);
+      res.status(404).json({ error: 'Node not found', details: `No node found with ID ${nodeIdParam}` });
+    }
+  } catch (error) {
+    console.error(`GET /api/node/${nodeIdParam}: Error fetching node:`, error);
+    res.status(500).json({ error: 'Failed to fetch node', details: (error as Error).message });
+  } finally {
+    if (client) client.release();
+  }
+};
+app.get('/api/node/:id', getNodeByIdHandler);
+
+// Update Node
+const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
+  const nodeIdParam = req.params.id; 
+  const { properties } = req.body;
+  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
+  let client;
 
   if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
     res.status(400).json({ error: 'Properties (object) to update are required.' });
@@ -429,34 +643,16 @@ const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNo
     return `v.${cypherKey} = ${JSON.stringify(value)}`;
   }).join(', ');
   
-  // IMPORTANT: id(v) returns an integer in AGE, but graphid is a string like "3.14".
-  // We need to match by graphid string if that's what we store/send to frontend.
-  // However, the id() function in Cypher typically works with the internal integer ID.
-  // Let's assume for now that the frontend sends the internal integer ID for updates/deletes.
-  // If the frontend sends the graphid string, the query needs to change.
-  // For simplicity, let's assume nodeIdParam is the *integer* part of the graphid for WHERE id(v) = ...
-  // This is a potential point of mismatch if not handled consistently.
-  // Let's try to match by a property if available, or assume nodeIdParam is the integer part for id().
-
-  // Attempting to parse the integer part of the graphid for the WHERE clause
-  // This is a temporary workaround. Ideally, you'd have a consistent ID strategy.
-  let ageNodeInternalId: number;
+  let ageNodeInternalId: bigint; // Use BigInt
   try {
-    // If nodeIdParam is "label_id.entry_id", e.g., "3.14", split and parse the entry_id part.
-    // If it's just an integer string, parse it directly.
     const parts = nodeIdParam.split('.');
     const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
-    ageNodeInternalId = parseInt(idStringToParse, 10);
+    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
     
-    if (isNaN(ageNodeInternalId)) {
-        res.status(400).json({ error: `Invalid node ID format for Cypher id() function: ${nodeIdParam}. Expected integer or 'label_id.entry_id' parsable to integer.` });
-        return;
-    }
   } catch (e) {
-    res.status(400).json({ error: `Could not parse node ID for Cypher id() function: ${nodeIdParam}` });
+    res.status(400).json({ error: `Could not parse node ID to BigInt for Cypher id() function: ${nodeIdParam}` });
     return;
   }
-
 
   const updateCypherString = `
     MATCH (v)
@@ -466,32 +662,38 @@ const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNo
   `;
 
   const finalSql = `
-    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string
+    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
     FROM cypher($$${graphName}$$, $$ ${updateCypherString.replace(/\$\$/g, '$$$$')} $$) AS v_data(v agtype);
   `;
 
   try {
     client = await pool.connect();
+    console.log(`PUT /api/node/${nodeIdParam}: Successfully connected to database.`);
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
     console.log(`PUT /api/node/${nodeIdParam}: Executing SQL: ${finalSql}`);
     const result = await client.query<AgEntityRow>(finalSql);
 
-    if (result.rows.length > 0 && result.rows[0].ag_vertex_string) {
-      const agtypeString = result.rows[0].ag_vertex_string;
-      const jsonString = agtypeString.replace(/::\w+$/, '');
-      const updatedAgNode = JSON.parse(jsonString) as AgJsonNodeResponse;
+    if (result.rows.length > 0 && result.rows[0].ag_vertex_string_out) {
+      const updatedAgNodeString = result.rows[0].ag_vertex_string_out;
+      const parsedNode = parseAgtypeOutputString(updatedAgNodeString);
+
+      if (!parsedNode) {
+        console.error(`PUT /api/node/${nodeIdParam}: Failed to parse updated node string:`, updatedAgNodeString);
+        res.status(500).json({ error: 'Failed to parse updated node data from database.' });
+        return;
+      }
 
       const responseNode: VisNode = {
-        id: updatedAgNode.id, // graphid string
-        label: updatedAgNode.properties.name || updatedAgNode.properties.label || updatedAgNode.label || updatedAgNode.id,
-        title: JSON.stringify(updatedAgNode.properties, null, 2),
-        group: updatedAgNode.label,
-        properties: updatedAgNode.properties,
+        id: String(parsedNode.id),
+        label: parsedNode.properties.name || parsedNode.properties.label || parsedNode.label || String(parsedNode.id),
+        title: JSON.stringify(parsedNode.properties, null, 2),
+        group: parsedNode.label,
+        properties: parsedNode.properties,
       };
       res.json(responseNode);
     } else {
-      console.warn(`PUT /api/node/${nodeIdParam}: Node not found or update query returned no rows/vertex_json.`);
+      console.warn(`PUT /api/node/${nodeIdParam}: Node not found or update query returned no rows/vertex_string_out.`);
       res.status(404).json({ error: 'Node not found or not updated.' });
     }
   } catch (error) {
@@ -504,48 +706,50 @@ const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNo
 app.put('/api/node/:id', updateNodeHandler);
 
 // Delete Node
-const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, any, ParsedQs> = async (req, res): Promise<void> => {
-  const nodeIdParam = req.params.id;
+const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, {}, ParsedQs> = async (req, res): Promise<void> => {
+  const nodeIdParam = req.params.id; 
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
+  let ageNodeInternalId: bigint; // Use BigInt
 
-  // Similar to update, assuming id(v) needs an integer.
-  let ageNodeInternalId: number;
-   try {
-    ageNodeInternalId = parseInt(nodeIdParam.split('.')[1] || nodeIdParam, 10);
-    if (isNaN(ageNodeInternalId)) {
-        const directInt = parseInt(nodeIdParam, 10);
-        if (isNaN(directInt)) {
-            res.status(400).json({ error: `Invalid node ID format for Cypher id() function: ${nodeIdParam}. Expected integer or parsable to integer.` });
-            return;
-        }
-        ageNodeInternalId = directInt;
-    }
+  try {
+    const parts = nodeIdParam.split('.');
+    const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
+    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
+
   } catch (e) {
-    res.status(400).json({ error: `Could not parse node ID for Cypher id() function: ${nodeIdParam}` });
+    res.status(400).json({ error: `Could not parse node ID to BigInt for Cypher id() function: ${nodeIdParam}` });
     return;
   }
 
   const deleteCypherString = `
     MATCH (v)
-    WHERE id(v) = ${ageNodeInternalId}
+    WHERE id(v) = ${ageNodeInternalId} // Use BigInt in query
     DETACH DELETE v
+    RETURN '${nodeIdParam}' 
   `;
 
   const finalSql = `
-    PERFORM cypher($$${graphName}$$, $$ ${deleteCypherString.replace(/\$\$/g, '$$$$')} $$);
+    SELECT result_data.id_string AS deleted_node_id
+    FROM cypher($$${graphName}$$, $$ ${deleteCypherString.replace(/\$\$/g, '$$$$')} $$) AS result_data(id_string agtype);
   `;
 
   try {
     client = await pool.connect();
+    console.log(`DELETE /api/node/${nodeIdParam}: Successfully connected to database.`);
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
-    console.log(`DELETE /api/node/${nodeIdParam}: Executing Cypher: ${finalSql}`);
-    // Check if the node was actually deleted by trying to fetch it, or check affected rows if PERFORM returns it.
-    // For now, we assume success if no error.
-    await client.query(finalSql); 
+    console.log(`DELETE /api/node/${nodeIdParam}: Executing SQL: ${finalSql}`);
+    const result = await client.query<{ deleted_node_id: string }>(finalSql);
 
-    res.status(200).json({ message: 'Node deleted successfully', id: nodeIdParam }); // Return the original ID sent by client
+    if (result.rows.length > 0 && result.rows[0].deleted_node_id === `"${nodeIdParam}"` ) { 
+      console.log(`DELETE /api/node/${nodeIdParam}: Node deleted successfully.`);
+      res.json({ message: 'Node deleted successfully', id: nodeIdParam });
+    } else {
+      console.warn(`DELETE /api/node/${nodeIdParam}: Node not found or not deleted. Cypher query may not have matched.`);
+      // It's important to send a response back to the client in this case too.
+      res.status(404).json({ error: 'Node not found or not deleted.', details: `Node ID ${nodeIdParam} may not exist or was already deleted.` });
+    }
   } catch (error) {
     console.error(`DELETE /api/node/${nodeIdParam}: Error deleting node:`, error);
     res.status(500).json({ error: 'Failed to delete node', details: (error as Error).message });
@@ -555,71 +759,82 @@ const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, any, Par
 };
 app.delete('/api/node/:id', deleteNodeHandler);
 
+// --- Edge CRUD Handlers ---
+
 // Create Edge
 const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, CreateEdgeBody, ParsedQs> = async (req, res): Promise<void> => {
   const { from, to, label, properties } = req.body;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
 
-  if (!from || !to || !label || !properties) {
-    res.status(400).json({ error: '`from` (source node ID), `to` (target node ID), `label` (string), and `properties` (object) are required.' });
+  if (!from || !to || !label || typeof label !== 'string' || !properties || typeof properties !== 'object') {
+    res.status(400).json({ error: 'From node ID (string), to node ID (string), label (string), and properties (object) are required.' });
     return;
   }
 
-  // Validate from/to IDs - they should be strings representing graphids (e.g., "1.23")
-  // Basic validation, can be enhanced if a strict format is known and required.
-  if (typeof from !== 'string' || typeof to !== 'string' || typeof label !== 'string' || typeof properties !== 'object') {
-    res.status(400).json({ error: 'Invalid types for `from`, `to`, `label`, or `properties`.' });
+  let fromNodeInternalId: bigint;
+  let toNodeInternalId: bigint;
+
+  try {
+    // Assuming 'from' and 'to' are string representations of the numeric AGE IDs
+    fromNodeInternalId = BigInt(from);
+    toNodeInternalId = BigInt(to);
+  } catch (e) {
+    console.error('POST /api/edge: Error parsing from/to node IDs to BigInt.', e);
+    res.status(400).json({ error: 'Invalid from/to node ID format. Must be string representation of a number.', details: (e as Error).message });
     return;
   }
 
   const propertiesString = Object.entries(properties)
     .map(([key, value]) => {
       const escapedKey = key.replace(/`/g, '``');
-      const cypherKey = (key.includes(' ') || !/^[a-zA-Z_][\w]*$/.test(key)) ? `\`${escapedKey}\`` : escapedKey;
+      const cypherKey = (key.includes(' ') || !/^[a-zA-Z_][\\w]*$/.test(key)) ? `\\\`${escapedKey}\\\`` : escapedKey;
       return `${cypherKey}: ${JSON.stringify(value)}`;
     })
     .join(', ');
 
-  // Construct the Cypher query to match nodes by their graphid and then create the edge.
-  // We assume 'from' and 'to' are the string representations of graphid (e.g., "entry_id.id")
-  // and need to be cast to graphid in the Cypher query.
-  const cypherQuery = `
-    SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string
-    FROM cypher($$${graphName}$$, $$
-        MATCH (a), (b)
-        WHERE ag_catalog.graphid_to_string(id(a)) = $1 AND ag_catalog.graphid_to_string(id(b)) = $2
-        CREATE (a)-[e:${label} {${propertiesString}}]->(b)
-        RETURN e
-    $$, $3) AS e_data(e agtype);
+  const createEdgeCypherString = `
+    MATCH (a), (b)
+    WHERE id(a) = ${fromNodeInternalId} AND id(b) = ${toNodeInternalId}
+    CREATE (a)-[e:${label} {${propertiesString}}]->(b)
+    RETURN e
   `;
-  // Parameters for the query: from (source node ID), to (target node ID), and an array containing these for the cypher function
-  const queryParams = [from, to, [from, to]]; 
+
+  const finalSql = `
+    SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string_out
+    FROM cypher($$${graphName}$$, $$ ${createEdgeCypherString.replace(/\\$\\$/g, '$$$$')} $$) AS e_data(e agtype);
+  `;
 
   try {
     client = await pool.connect();
+    console.log('POST /api/edge: Successfully connected to database.');
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
-    console.log(`POST /api/edge: Executing Cypher: ${cypherQuery} with params: ${JSON.stringify(queryParams)}`);
-    const result = await client.query<AgEntityRow>(cypherQuery, queryParams);
+    console.log(`POST /api/edge: Executing SQL: ${finalSql}`);
+    const result = await client.query<AgEntityRow>(finalSql);
 
-    if (result.rows.length > 0 && result.rows[0].ag_edge_string) {
-      const agtypeString = result.rows[0].ag_edge_string;
-      const jsonString = agtypeString.replace(/::\w+$/, '');
-      const createdAgEdge = JSON.parse(jsonString) as AgJsonEdgeResponse;
+    if (result.rows.length > 0 && result.rows[0].ag_edge_string_out) {
+      const createdAgEdgeString = result.rows[0].ag_edge_string_out;
+      const parsedEdge = parseAgtypeOutputString(createdAgEdgeString);
+
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+        console.error('POST /api/edge: Failed to parse created edge string or missing start/end IDs:', createdAgEdgeString, parsedEdge);
+        res.status(500).json({ error: 'Failed to parse created edge data from database.' });
+        return;
+      }
 
       const responseEdge: VisEdge = {
-        id: String(createdAgEdge.id), // Ensure ID is string
-        from: String(createdAgEdge.start_id), // Ensure from/to are strings
-        to: String(createdAgEdge.end_id),
-        label: createdAgEdge.properties.label || createdAgEdge.label,
-        title: JSON.stringify(createdAgEdge.properties, null, 2),
-        properties: createdAgEdge.properties,
+        id: String(parsedEdge.id),
+        from: String(parsedEdge.start_id),
+        to: String(parsedEdge.end_id),
+        label: parsedEdge.properties.label || parsedEdge.label,
+        title: JSON.stringify(parsedEdge.properties, null, 2),
+        properties: parsedEdge.properties,
       };
       res.status(201).json(responseEdge);
     } else {
-      console.error('POST /api/edge: Edge creation query returned no rows or no ag_edge_string.');
-      res.status(500).json({ error: 'Failed to create edge; query returned no results or no ag_edge_string. Check if source/target nodes exist.' });
+      console.error('POST /api/edge: Edge creation query returned no rows or no ag_edge_string_out. Check if source/target nodes exist.');
+      res.status(500).json({ error: 'Failed to create edge; query returned no results or no ag_edge_string_out. Source or target nodes might not exist.' });
     }
   } catch (error) {
     console.error('POST /api/edge: Error creating edge:', error);
@@ -630,66 +845,146 @@ const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, Cr
 };
 app.post('/api/edge', createEdgeHandler);
 
-// Update Edge
-const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEdgeBody, ParsedQs> = async (req, res): Promise<void> => {
-  const edgeIdParam = req.params.id; // This is expected to be the graphid string
-  const { properties } = req.body;
+
+// Fetch Edge by ID
+const getEdgeByIdHandler: RequestHandler<EdgeParams, VisEdge | { error: string; details?: string }, {}, ParsedQs> = async (req, res): Promise<void> => {
+  const edgeIdParam = req.params.id;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
+  let ageEdgeInternalId: bigint;
 
-  if (!edgeIdParam) {
-    res.status(400).json({ error: 'Edge ID parameter is required.' });
+  console.log(`GET /api/edge/${edgeIdParam}: Received request for edge ID.`);
+
+  try {
+    // Assuming edgeIdParam is a string representation of the numeric AGE ID
+    ageEdgeInternalId = BigInt(edgeIdParam);
+  } catch (e) {
+    console.error(`GET /api/edge/${edgeIdParam}: Error parsing edge ID to BigInt. Original: '${edgeIdParam}'`, e);
+    res.status(400).json({ error: `Could not parse edge ID to BigInt for Cypher id() function: ${edgeIdParam}` });
     return;
   }
-  if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
-    res.status(400).json({ error: 'Properties (object) to update are required and cannot be empty.' });
-    return;
-  }
 
-  // Prepare properties for SET clause. AGE allows direct JSON object for properties update.
-  // However, to be precise with Cypher, we construct the SET clauses for each property.
-  const setClauses = Object.entries(properties).map(([key, value]) => {
-    const escapedKey = key.replace(/`/g, '``');
-    // Quote key if it contains spaces or special characters or doesn't follow typical identifier rules
-    const cypherKey = (key.includes(' ') || !/^[a-zA-Z_][\w]*$/.test(key)) ? `\`${escapedKey}\`` : escapedKey;
-    return `e.${cypherKey} = ${JSON.stringify(value)}`;
-  }).join(', ');
-
-  const cypherQuery = `
-    SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string
-    FROM cypher($$${graphName}$$, $$
-        MATCH ()-[e]->()
-        WHERE ag_catalog.graphid_to_string(id(e)) = $1
-        SET ${setClauses}
-        RETURN e
-    $$, $2) AS e_data(e agtype);
+  const getEdgeCypherString = `
+    MATCH ()-[e]->()
+    WHERE id(e) = ${ageEdgeInternalId}
+    RETURN e
   `;
-  const queryParams = [edgeIdParam, [edgeIdParam]]; // Parameter for graphid_to_string and for the cypher function context
+
+  const finalSql = `
+    SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string_out
+    FROM cypher($$${graphName}$$, $$ ${getEdgeCypherString.replace(/\\$\\$/g, '$$$$')} $$) AS e_data(e agtype);
+  `;
 
   try {
     client = await pool.connect();
+    console.log(`GET /api/edge/${edgeIdParam}: Successfully connected to database.`);
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
-    console.log(`PUT /api/edge/${edgeIdParam}: Executing Cypher: ${cypherQuery} with params: ${JSON.stringify(queryParams)}`);
-    const result = await client.query<AgEntityRow>(cypherQuery, queryParams);
+    console.log(`GET /api/edge/${edgeIdParam}: Executing SQL: ${finalSql}`);
+    const result = await client.query<AgEntityRow>(finalSql);
 
-    if (result.rows.length > 0 && result.rows[0].ag_edge_string) {
-      const agtypeString = result.rows[0].ag_edge_string;
-      const jsonString = agtypeString.replace(/::\w+$/, '');
-      const updatedAgEdge = JSON.parse(jsonString) as AgJsonEdgeResponse;
+    if (result.rows.length > 0 && result.rows[0].ag_edge_string_out) {
+      const agEdgeString = result.rows[0].ag_edge_string_out;
+      const parsedEdge = parseAgtypeOutputString(agEdgeString);
+
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+        console.error(`GET /api/edge/${edgeIdParam}: Failed to parse edge string or missing start/end IDs:`, agEdgeString, parsedEdge);
+        res.status(500).json({ error: 'Failed to parse edge data from database.' });
+        return;
+      }
 
       const responseEdge: VisEdge = {
-        id: String(updatedAgEdge.id),
-        from: String(updatedAgEdge.start_id),
-        to: String(updatedAgEdge.end_id),
-        label: updatedAgEdge.properties.label || updatedAgEdge.label,
-        title: JSON.stringify(updatedAgEdge.properties, null, 2),
-        properties: updatedAgEdge.properties,
+        id: String(parsedEdge.id),
+        from: String(parsedEdge.start_id),
+        to: String(parsedEdge.end_id),
+        label: parsedEdge.properties.label || parsedEdge.label,
+        title: JSON.stringify(parsedEdge.properties, null, 2),
+        properties: parsedEdge.properties,
       };
-      res.status(200).json(responseEdge);
+      console.log(`GET /api/edge/${edgeIdParam}: Edge found, returning:`, responseEdge);
+      res.json(responseEdge);
     } else {
-      console.error(`PUT /api/edge/${edgeIdParam}: Edge update query returned no rows or no ag_edge_string. Edge might not exist.`);
-      res.status(404).json({ error: `Failed to update edge. Edge with ID '${edgeIdParam}' not found or no properties changed.` });
+      console.warn(`GET /api/edge/${edgeIdParam}: Edge not found with ID. Query returned no rows or no ag_edge_string_out.`);
+      res.status(404).json({ error: 'Edge not found', details: `No edge found with ID ${edgeIdParam}` });
+    }
+  } catch (error) {
+    console.error(`GET /api/edge/${edgeIdParam}: Error fetching edge:`, error);
+    res.status(500).json({ error: 'Failed to fetch edge', details: (error as Error).message });
+  } finally {
+    if (client) client.release();
+  }
+};
+app.get('/api/edge/:id', getEdgeByIdHandler);
+
+
+// Update Edge
+const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEdgeBody, ParsedQs> = async (req, res): Promise<void> => {
+  const edgeIdParam = req.params.id;
+  const { properties } = req.body;
+  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
+  let client;
+  let ageEdgeInternalId: bigint;
+
+  if (!properties || typeof properties !== 'object' || Object.keys(properties).length === 0) {
+    res.status(400).json({ error: 'Properties (object) to update are required.' });
+    return;
+  }
+
+  try {
+    ageEdgeInternalId = BigInt(edgeIdParam);
+  } catch (e) {
+    res.status(400).json({ error: `Could not parse edge ID to BigInt for Cypher id() function: ${edgeIdParam}` });
+    return;
+  }
+
+  const setClauses = Object.entries(properties).map(([key, value]) => {
+    const escapedKey = key.replace(/`/g, '``');
+    const cypherKey = (key.includes(' ') || !/^[a-zA-Z_][\\w]*$/.test(key)) ? `\\\`${escapedKey}\\\`` : escapedKey;
+    return `e.${cypherKey} = ${JSON.stringify(value)}`;
+  }).join(', ');
+
+  const updateEdgeCypherString = `
+    MATCH ()-[e]->()
+    WHERE id(e) = ${ageEdgeInternalId}
+    SET ${setClauses}
+    RETURN e
+  `;
+
+  const finalSql = `
+    SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string_out
+    FROM cypher($$${graphName}$$, $$ ${updateEdgeCypherString.replace(/\\$\\$/g, '$$$$')} $$) AS e_data(e agtype);
+  `;
+
+  try {
+    client = await pool.connect();
+    console.log(`PUT /api/edge/${edgeIdParam}: Successfully connected to database.`);
+    await client.query("SET search_path = ag_catalog, '$user', public;");
+
+    console.log(`PUT /api/edge/${edgeIdParam}: Executing SQL: ${finalSql}`);
+    const result = await client.query<AgEntityRow>(finalSql);
+
+    if (result.rows.length > 0 && result.rows[0].ag_edge_string_out) {
+      const updatedAgEdgeString = result.rows[0].ag_edge_string_out;
+      const parsedEdge = parseAgtypeOutputString(updatedAgEdgeString);
+
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+        console.error(`PUT /api/edge/${edgeIdParam}: Failed to parse updated edge string or missing start/end IDs:`, updatedAgEdgeString, parsedEdge);
+        res.status(500).json({ error: 'Failed to parse updated edge data from database.' });
+        return;
+      }
+
+      const responseEdge: VisEdge = {
+        id: String(parsedEdge.id),
+        from: String(parsedEdge.start_id),
+        to: String(parsedEdge.end_id),
+        label: parsedEdge.properties.label || parsedEdge.label,
+        title: JSON.stringify(parsedEdge.properties, null, 2),
+        properties: parsedEdge.properties,
+      };
+      res.json(responseEdge);
+    } else {
+      console.warn(`PUT /api/edge/${edgeIdParam}: Edge not found or update query returned no rows/edge_string_out.`);
+      res.status(404).json({ error: 'Edge not found or not updated.' });
     }
   } catch (error) {
     console.error(`PUT /api/edge/${edgeIdParam}: Error updating edge:`, error);
@@ -700,69 +995,50 @@ const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEd
 };
 app.put('/api/edge/:id', updateEdgeHandler);
 
+
 // Delete Edge
 const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, ParsedQs> = async (req, res): Promise<void> => {
-  const edgeIdParam = req.params.id; // This is expected to be the graphid string
+  const edgeIdParam = req.params.id;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
+  let ageEdgeInternalId: bigint;
 
-  if (!edgeIdParam) {
-    res.status(400).json({ error: 'Edge ID parameter is required.' });
+  try {
+    ageEdgeInternalId = BigInt(edgeIdParam);
+  } catch (e) {
+    res.status(400).json({ error: `Could not parse edge ID to BigInt for Cypher id() function: ${edgeIdParam}` });
     return;
   }
 
-  // In AGE, deleting an edge requires matching it first. The count of deleted edges isn't directly returned by DELETE.
-  // We can first check if the edge exists, then delete it, or attempt delete and infer success if no error.
-  // For simplicity, we'll attempt delete. If the edge doesn't exist, the query won't fail but won't delete anything.
-  // To confirm deletion, we'd ideally check rowCount if the Cypher query returned something indicative of a successful match and delete.
-  // AGE's `DELETE` in Cypher doesn't return the deleted element directly in the same way `RETURN` does for `CREATE` or `SET`.
-  // We will assume success if the query executes without error and affect at least one row if we were to count it before.
-  // A more robust way would be to count before and after, or use a subquery if AGE syntax allows.
-
-  // We will execute a query that attempts to delete and then try to return the ID of what was deleted.
-  // However, AGE might not support returning properties of a deleted edge. Let's try a simpler approach.
-  // We will execute the DELETE and if it doesn't throw, assume it worked or the edge wasn't there.
-  // To provide better feedback, we should ideally know if the edge existed.
-
-  const checkQuery = `
-    SELECT count(*) as edge_count
-    FROM cypher($$${graphName}$$, $$
-        MATCH ()-[e]->()
-        WHERE ag_catalog.graphid_to_string(id(e)) = $1
-        RETURN id(e)
-    $$, $2) AS data(edge_id agtype);
+  // Return the original edgeIdParam (string) if successful, to match node deletion pattern
+  const deleteEdgeCypherString = `
+    MATCH ()-[e]->()
+    WHERE id(e) = ${ageEdgeInternalId}
+    DELETE e
+    RETURN '${edgeIdParam}' 
   `;
-  const deleteCypherQuery = `
-    CALL cypher($$${graphName}$$, $$
-        MATCH ()-[e]->()
-        WHERE ag_catalog.graphid_to_string(id(e)) = $1
-        DELETE e
-    $$, $2) RETURN void;
-  `;
-  const queryParams = [edgeIdParam, [edgeIdParam]];
 
+  const finalSql = `
+    SELECT result_data.id_string AS deleted_edge_id 
+    FROM cypher($$${graphName}$$, $$ ${deleteEdgeCypherString.replace(/\\$\\$/g, '$$$$')} $$) AS result_data(id_string agtype);
+  `;
+  
   try {
     client = await pool.connect();
+    console.log(`DELETE /api/edge/${edgeIdParam}: Successfully connected to database.`);
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
-    // First, check if the edge exists
-    console.log(`DELETE /api/edge/${edgeIdParam}: Checking if edge exists. Query: ${checkQuery} with params: ${JSON.stringify(queryParams)}`);
-    const checkResult = await client.query<{ edge_count: string }>(checkQuery, queryParams);
-    
-    if (parseInt(checkResult.rows[0]?.edge_count || "0") === 0) {
-      console.log(`DELETE /api/edge/${edgeIdParam}: Edge not found.`);
-      res.status(404).json({ error: `Edge with ID '${edgeIdParam}' not found.` });
-      return;
+    console.log(`DELETE /api/edge/${edgeIdParam}: Executing SQL: ${finalSql}`);
+    const result = await client.query<{ deleted_edge_id: string }>(finalSql);
+
+    // The returned agtype string will be quoted, e.g., "\"12345\""
+    if (result.rows.length > 0 && result.rows[0].deleted_edge_id === `"${edgeIdParam}"`) {
+      console.log(`DELETE /api/edge/${edgeIdParam}: Edge deleted successfully.`);
+      res.json({ message: 'Edge deleted successfully', id: edgeIdParam });
+    } else {
+      console.warn(`DELETE /api/edge/${edgeIdParam}: Edge not found or not deleted. Cypher query may not have matched. Result:`, result.rows);
+      res.status(404).json({ error: 'Edge not found or not deleted.', details: `Edge ID ${edgeIdParam} may not exist or was already deleted.` });
     }
-
-    // If edge exists, proceed to delete
-    console.log(`DELETE /api/edge/${edgeIdParam}: Executing Cypher: ${deleteCypherQuery} with params: ${JSON.stringify(queryParams)}`);
-    await client.query(deleteCypherQuery, queryParams); // CALL ... RETURN void doesn't return rows for rowCount check
-
-    // Since DELETE in AGE within a CALL procedure might not give row counts indicating deletion,
-    // and we've confirmed existence, we assume success if no error is thrown.
-    res.status(200).json({ message: 'Edge deleted successfully', id: edgeIdParam });
-
   } catch (error) {
     console.error(`DELETE /api/edge/${edgeIdParam}: Error deleting edge:`, error);
     res.status(500).json({ error: 'Failed to delete edge', details: (error as Error).message });
@@ -772,55 +1048,56 @@ const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, Pars
 };
 app.delete('/api/edge/:id', deleteEdgeHandler);
 
-// Search Graph
+
+// Search Query Interface for the old /api/search by term
 interface SearchQuery extends ParsedQs {
-  q: string;
+  term: string;
 }
 
-const searchGraphHandler: RequestHandler<ParamsDictionary, GraphData | { error: string; details?: string }, any, SearchQuery> = async (req, res): Promise<void> => {
-  const searchQuery = req.query.q;
+// Old search endpoint (by general term) - kept for reference or potential future use, but new one is /api/nodes/search
+app.get('/api/search', async (req: express.Request<ParamsDictionary, GraphData | { error: string; details?: string }, {}, SearchQuery>, res: express.Response<GraphData | { error: string; details?: string }>): Promise<void> => {
+  const searchTerm = req.query.term;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
 
-  if (!searchQuery || typeof searchQuery !== 'string' || searchQuery.trim() === '') {
-    res.status(400).json({ error: 'Search query (q) is required and cannot be empty.' });
+  if (!searchTerm) {
+    res.status(400).json({ error: 'Search term is required' });
     return;
   }
 
-  console.log(`GET /api/search: Query received: "${searchQuery}"`);
+  console.log(`GET /api/search: Received search request for term: "${searchTerm}"`);
 
-  // Sanitize/escape the search query for direct use in CONTAINS. 
-  // Cypher parameters handle most of this, but for CONTAINS, the string itself is evaluated.
-  // A simple approach: escape single quotes. For more complex needs, a dedicated library or more robust escaping is better.
-  const searchTerm = searchQuery.replace(/'/g, "''"); 
+  const nodeSearchQuery = `
+    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
+    FROM cypher($$${graphName}$$, $$
+        MATCH (v)
+        WHERE (
+          ANY(propKey IN keys(properties(v)) WHERE toString(properties(v)[propKey]) CONTAINS '${searchTerm.replace(/'/g, '\'\'')}') OR
+          ANY(lbl IN labels(v) WHERE lbl CONTAINS '${searchTerm.replace(/'/g, '\'\'')}')
+        )
+        RETURN v
+    $$) AS v_data(v agtype);
+  `;
 
   try {
     client = await pool.connect();
     await client.query("SET search_path = ag_catalog, '$user', public;");
 
-    // Fetch matching nodes
-    // We use parameterized query for the search term within the Cypher string itself.
-    const nodesCypherQuery = `
-      SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string
-      FROM cypher($$${graphName}$$, $$
-          MATCH (v)
-          WHERE (v.label IS NOT NULL AND v.label CONTAINS $searchTermParam) OR 
-                ANY(prop_key IN KEYS(v.properties) WHERE toString(v.properties[prop_key]) CONTAINS $searchTermParam)
-          RETURN v
-      $$, jsonb_build_object('searchTermParam', $1)) AS v_data(v agtype);
-    `;
-    console.log(`GET /api/search: Executing nodes search: ${nodesCypherQuery} with term: ${searchQuery}`);
-    const nodesResult = await client.query<AgEntityRow>(nodesCypherQuery, [searchQuery]); // Pass original searchQuery as parameter
-    console.log(`GET /api/search: Found ${nodesResult.rowCount} raw matching node entries.`);
+    console.log(`GET /api/search: Executing Node Search SQL: ${nodeSearchQuery}`);
+    const nodesResult = await client.query<AgEntityRow>(nodeSearchQuery);
+    console.log(`GET /api/search: Fetched ${nodesResult.rowCount} raw node entries from search (as agtype strings).`);
 
-    const nodes: VisNode[] = nodesResult.rows.map((row: AgEntityRow): VisNode | null => {
-      if (!row.ag_vertex_string) return null;
+    const foundNodes: VisNode[] = nodesResult.rows.map((row: AgEntityRow): VisNode | null => {
+      if (!row.ag_vertex_string_out) return null; 
       try {
-        const agtypeString = row.ag_vertex_string;
-        const jsonString = agtypeString.replace(/::\w+$/, '');
-        const parsed = JSON.parse(jsonString) as AgJsonNodeResponse;
+        const parsed = parseAgtypeOutputString(row.ag_vertex_string_out); 
+        if (!parsed) {
+            console.error("GET /api/search: Failed to parse searched node string:", row.ag_vertex_string_out);
+            return null;
+        }
+        
         return {
-          id: String(parsed.id),
+          id: String(parsed.id), 
           label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id),
           title: JSON.stringify(parsed.properties, null, 2),
           group: parsed.label,
@@ -831,174 +1108,101 @@ const searchGraphHandler: RequestHandler<ParamsDictionary, GraphData | { error: 
         return null;
       }
     }).filter((node): node is VisNode => node !== null);
-    console.log(`GET /api/search: Processed ${nodes.length} matching nodes.`);
+    console.log(`GET /api/search: Processed ${foundNodes.length} nodes from search.`);
 
-    // Fetch matching edges
-    const edgesCypherQuery = `
-      SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string
-      FROM cypher($$${graphName}$$, $$
-          MATCH ()-[e]->()
-          WHERE (e.label IS NOT NULL AND e.label CONTAINS $searchTermParam) OR 
-                ANY(prop_key IN KEYS(e.properties) WHERE toString(e.properties[prop_key]) CONTAINS $searchTermParam)
-          RETURN e
-      $$, jsonb_build_object('searchTermParam', $1)) AS e_data(e agtype);
-    `;
-    console.log(`GET /api/search: Executing edges search: ${edgesCypherQuery} with term: ${searchQuery}`);
-    const edgesResult = await client.query<AgEntityRow>(edgesCypherQuery, [searchQuery]);
-    console.log(`GET /api/search: Found ${edgesResult.rowCount} raw matching edge entries.`);
-
-    const processedEdgeStringIds = new Set<string>();
-    const edges: VisEdge[] = edgesResult.rows.map((row: AgEntityRow): VisEdge | null => {
-      if (!row.ag_edge_string) return null;
-      try {
-        const agtypeString = row.ag_edge_string;
-        const jsonString = agtypeString.replace(/::\w+$/, '');
-        const parsed = JSON.parse(jsonString) as AgJsonEdgeResponse;
-        const edgeIdString = String(parsed.id);
-
-        if (processedEdgeStringIds.has(edgeIdString)) {
-          return null; // Should ideally not happen if search results are distinct, but good for safety
-        }
-        processedEdgeStringIds.add(edgeIdString);
-
-        return {
-          from: String(parsed.start_id),
-          to: String(parsed.end_id),
-          label: parsed.properties.label || parsed.label,
-          title: JSON.stringify(parsed.properties, null, 2),
-          properties: parsed.properties,
-          id: edgeIdString
-        };
-      } catch (e) {
-        console.error("Error processing searched edge row:", row, e);
-        return null;
-      }
-    }).filter((edge): edge is VisEdge => edge !== null);
-    console.log(`GET /api/search: Processed ${edges.length} matching edges.`);
-
-    // If nodes are found from search, we should also include edges that connect these nodes,
-    // even if the edges themselves didn't match the search term directly.
-    // This provides context. We also need all nodes participating in these contextual edges.
-
-    let contextualNodes: VisNode[] = [...nodes];
-    let contextualEdges: VisEdge[] = [...edges];
-
-    if (nodes.length > 0) {
-        const matchingNodeIds = nodes.map(n => n.id);
-        const matchingNodeIdStrings = matchingNodeIds.map(id => `'${String(id).replace(/'/g, "''")}'`).join(', '); // Prepare for IN clause
-
-        if (matchingNodeIdStrings) { // Ensure not empty before querying
-            const contextualEdgesQuery = `
-                SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string
-                FROM cypher($$${graphName}$$, $$
-                    MATCH (n)-[e]-(m)
-                    WHERE ag_catalog.graphid_to_string(id(n)) IN [$nodeIdsParam] OR ag_catalog.graphid_to_string(id(m)) IN [$nodeIdsParam]
-                    RETURN e
-                $$, jsonb_build_object('nodeIdsParam', $1)) AS e_data(e agtype);
-            `;
-            console.log(`GET /api/search: Fetching contextual edges for ${matchingNodeIds.length} matched nodes.`);
-            const contextualEdgesResult = await client.query<AgEntityRow>(contextualEdgesQuery, [matchingNodeIds]);
-            console.log(`GET /api/search: Found ${contextualEdgesResult.rowCount} raw contextual edge entries.`);
-
-            const newContextualEdges: VisEdge[] = contextualEdgesResult.rows.map((row: AgEntityRow): VisEdge | null => {
-                if (!row.ag_edge_string) return null;
-                try {
-                    const agtypeString = row.ag_edge_string;
-                    const jsonString = agtypeString.replace(/::\w+$/, '');
-                    const parsed = JSON.parse(jsonString) as AgJsonEdgeResponse;
-                    const edgeIdString = String(parsed.id);
-                    // Add only if not already present from direct search
-                    if (!processedEdgeStringIds.has(edgeIdString)) {
-                        processedEdgeStringIds.add(edgeIdString);
-                        return {
-                            from: String(parsed.start_id),
-                            to: String(parsed.end_id),
-                            label: parsed.properties.label || parsed.label,
-                            title: JSON.stringify(parsed.properties, null, 2),
-                            properties: parsed.properties,
-                            id: edgeIdString
-                        };
-                    }
-                    return null;
-                } catch (e) {
-                    console.error("Error processing contextual edge row:", row, e);
-                    return null;
-                }
-            }).filter((edge): edge is VisEdge => edge !== null);
-            contextualEdges.push(...newContextualEdges);
-            console.log(`GET /api/search: Added ${newContextualEdges.length} new contextual edges.`);
-
-            // Now, ensure all nodes participating in the *final* edge list are included.
-            const allNodeIdsInFinalEdges = new Set<string>();
-            contextualEdges.forEach(e => {
-                allNodeIdsInFinalEdges.add(String(e.from));
-                allNodeIdsInFinalEdges.add(String(e.to));
-            });
-
-            const currentContextualNodeIds = new Set(contextualNodes.map(n => String(n.id)));
-            const missingNodeIds = Array.from(allNodeIdsInFinalEdges).filter(id => !currentContextualNodeIds.has(id));
-            
-            if (missingNodeIds.length > 0) {
-                const missingNodeIdStrings = missingNodeIds.map(id => `'${String(id).replace(/'/g, "''")}'`).join(', ');
-                const missingNodesQuery = `
-                    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string
-                    FROM cypher($$${graphName}$$, $$
-                        MATCH (v)
-                        WHERE ag_catalog.graphid_to_string(id(v)) IN [$nodeIdsParam]
-                        RETURN v
-                    $$, jsonb_build_object('nodeIdsParam', $1)) AS v_data(v agtype);
-                `;
-                console.log(`GET /api/search: Fetching ${missingNodeIds.length} missing contextual nodes.`);
-                const missingNodesResult = await client.query<AgEntityRow>(missingNodesQuery, [missingNodeIds]);
-                const newContextualNodes: VisNode[] = missingNodesResult.rows.map((row: AgEntityRow): VisNode | null => {
-                     if (!row.ag_vertex_string) return null;
-                    try {
-                        const agtypeString = row.ag_vertex_string;
-                        const jsonString = agtypeString.replace(/::\w+$/, '');
-                        const parsed = JSON.parse(jsonString) as AgJsonNodeResponse;
-                        return {
-                            id: String(parsed.id),
-                            label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id),
-                            title: JSON.stringify(parsed.properties, null, 2),
-                            group: parsed.label,
-                            properties: parsed.properties,
-                        };
-                    } catch (e) {
-                        console.error("Error processing missing contextual node row:", row, e);
-                        return null;
-                    }
-                }).filter((node): node is VisNode => node !== null);
-                contextualNodes.push(...newContextualNodes);
-                console.log(`GET /api/search: Added ${newContextualNodes.length} new contextual nodes.`);
-            }
-        }
-    }
-
-    // De-duplicate nodes before sending (e.g. if a node was matched directly and also contextually)
-    const finalNodesMap = new Map<string, VisNode>();
-    contextualNodes.forEach(n => finalNodesMap.set(String(n.id), n));
-    const finalNodes = Array.from(finalNodesMap.values());
-
-    // Edges are already de-duplicated by ID using processedEdgeStringIds
-
-    console.log(`GET /api/search: Returning ${finalNodes.length} nodes and ${contextualEdges.length} edges (including contextual).`);
-    res.json({ nodes: finalNodes, edges: contextualEdges });
+    res.json({ nodes: foundNodes, edges: [] });
 
   } catch (error) {
-    console.error('GET /api/search: Error during graph search:', error);
-    res.status(500).json({ error: 'Failed to perform graph search', details: (error as Error).message });
+    console.error(`GET /api/search: Error during search for term "${searchTerm}":`, error);
+    res.status(500).json({ error: 'Failed to perform search', details: (error as Error).message });
   } finally {
-    if (client) {
-      client.release();
-      console.log('GET /api/search: Database client released.');
-    }
+    if (client) client.release();
+  }
+});
+
+// Interface for the new /api/nodes/search by property and value
+interface SearchNodesByPropertyQuery extends ParsedQs {
+  property: string;
+  value: string;
+}
+
+// Search Nodes by Property Value (Case-Insensitive) - New Endpoint: /api/nodes/search
+const searchNodesByPropertyHandler: RequestHandler<ParamsDictionary, GraphData | { error: string; details?: string }, {}, SearchNodesByPropertyQuery> = async (req, res): Promise<void> => {
+  const { property, value } = req.query;
+  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
+  let client;
+
+  if (!property || !value) {
+    res.status(400).json({ error: 'Property and value query parameters are required for search.' });
+    return;
+  }
+
+  const safeProperty = String(property).replace(/[^a-zA-Z0-9_]/g, '');
+  if (!safeProperty) {
+    res.status(400).json({ error: 'Invalid property name for search.' });
+    return;
+  }
+
+  const searchCypherString = `
+    MATCH (v)
+    WHERE toLower(toString(v.${safeProperty})) CONTAINS toLower($value)
+    RETURN v
+  `;
+
+  const finalSql = `
+    SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
+    FROM cypher(
+      $$${graphName}$$, 
+      $$ ${searchCypherString.replace(/\$\$/g, '$$$$')} $$,
+      $$ { "value": ${JSON.stringify(String(value))} } $$ 
+    ) AS v_data(v agtype);
+  `;
+
+  try {
+    client = await pool.connect();
+    await client.query("SET search_path = ag_catalog, '$user', public;");
+
+    console.log(`GET /api/nodes/search: Executing SQL: ${finalSql}`);
+    const nodesResult = await client.query<AgEntityRow>(finalSql);
+    console.log(`GET /api/nodes/search: Fetched ${nodesResult.rowCount} raw node entries from search (as agtype strings).`);
+
+    const foundNodes: VisNode[] = nodesResult.rows.map((row: AgEntityRow): VisNode | null => {
+      if (!row.ag_vertex_string_out) return null; 
+      try {
+        const parsed = parseAgtypeOutputString(row.ag_vertex_string_out); 
+         if (!parsed) {
+            console.error("GET /api/nodes/search: Failed to parse searched node string:", row.ag_vertex_string_out);
+            return null;
+        }
+        
+        return {
+          id: String(parsed.id), 
+          label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id),
+          title: JSON.stringify(parsed.properties, null, 2),
+          group: parsed.label,
+          properties: parsed.properties,
+        };
+      } catch (e) {
+        console.error("Error processing searched node row:", row, e);
+        return null;
+      }
+    }).filter((node): node is VisNode => node !== null);
+    console.log(`GET /api/nodes/search: Processed ${foundNodes.length} nodes from search.`);
+
+    res.json({ nodes: foundNodes, edges: [] });
+
+  } catch (error) {
+    console.error(`GET /api/nodes/search: Error during search for property "${property}" and value "${value}":`, error);
+    res.status(500).json({ error: 'Failed to search nodes', details: (error as Error).message });
+  } finally {
+    if (client) client.release();
   }
 };
-app.get('/api/search', searchGraphHandler);
+app.get('/api/nodes/search', searchNodesByPropertyHandler); // New route for property-based search
 
-
+// Start the server
 app.listen(port, () => {
-  console.log(`Backend server is running on http://localhost:${port}`);
-  // Test database connection on server startup
+  console.log(`Backend server running at http://localhost:${port}`);
+  console.log('Testing database connection and AGE setup...');
   testDatabaseConnection();
 });

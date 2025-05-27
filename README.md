@@ -78,30 +78,8 @@ The application follows a typical client-server architecture:
 
 ### Architectural Diagram
 
-```mermaid
-graph TD
-    subgraph User Interface (Browser)
-        A[Angular Frontend: SulfurGraphExplorer]
-    end
-
-    subgraph Backend Server
-        B[Node.js/Express API]
-    end
-
-    subgraph Database Server
-        C[AGE enabled Azure PostgreSQL]
-        D[Apache AGE Extension]
-    end
-
-    A -- HTTP/S REST API Calls --> B
-    B -- pg (node-postgres) driver --> C
-    C -- Loads/Uses --> D
-
-    style A fill:#D1E8FF,stroke:#333,stroke-width:2px
-    style B fill:#D5F5E3,stroke:#333,stroke-width:2px
-    style C fill:#FCF3CF,stroke:#333,stroke-width:2px
-    style D fill:#FADBD8,stroke:#333,stroke-width:2px
-```
+![Graph Diagram](src/assets/images/graph.png)
+![Architectural Diagram](src/assets/images/SulfurGraphExplorer.png)
 
 *(This diagram illustrates the high-level interaction between the frontend, backend, and database components. The Angular frontend communicates with the Node.js/Express backend via HTTP/S. The backend then interacts with the AGE enabled Azure PostgreSQL database, which utilizes the Apache AGE extension for graph operations.)*
 
@@ -139,7 +117,9 @@ pg-graph/
 │   │   ├── app.config.server.ts    # Server-side rendering configuration
 │   │   ├── app.routes.ts           # Client-side application routes
 │   │   └── app.routes.server.ts    # Server-side application routes
-│   ├── assets/                   # Static assets (images, etc.)
+│   ├── assets/                   # Static assets
+│   │   └── images/               # Image assets (e.g., diagrams)
+│   │       └── SulfurGraphExplorer.png # Example diagram
 │   ├── environments/             # Environment-specific configurations (prod, dev)
 │   ├── index.html                # Main HTML page
 │   ├── main.ts                   # Main entry point for the Angular application (client)
@@ -191,12 +171,165 @@ When a user performs a CRUD (Create, Read, Update, Delete) operation:
     *   The query is executed against Apache AGE.
 5.  **Database Operation**: Apache AGE modifies the graph data.
 6.  **Backend Response**: The backend API sends a response (e.g., the created/updated element, or a success message).
+    *   For `DELETE /api/node/:id`, the backend returns `{ message: string, deletedNodeId: string }`.
 7.  **Service Receives Response**: `GraphDataService` gets the response.
 8.  **UI Update & Feedback**:
     *   The UI component receives data/confirmation.
-    *   It provides feedback (e.g., success message).
     *   Crucially, `AppComponent` is notified (e.g., via an event emitter like `graphChanged` from `GraphEditorComponent`).
     *   `AppComponent` then calls a method on `GraphVisualizationComponent` (e.g., `refreshGraphData()`) to re-fetch the entire graph, ensuring the visualization is up-to-date.
+
+### Node CRUD API Endpoints
+
+The backend (`backend/src/server.ts`) provides the following RESTful API endpoints for managing nodes:
+
+*   **Create Node:** `POST /api/node`
+    *   **Request Body:** JSON object representing the node to create.
+        ```json
+        {
+          "label": "WorkOrder",
+          "properties": {
+            "work_order_id": "WO12345",
+            "status": "Open",
+            "description": "Routine maintenance check"
+          }
+        }
+        ```
+    *   **Response Body:** JSON object of the created node, including its auto-generated graph ID.
+        ```json
+        {
+          "id": "10133099161583620", // Example graph ID
+          "label": "WorkOrder",
+          "properties": {
+            "work_order_id": "WO12345",
+            "status": "Open",
+            "description": "Routine maintenance check"
+          }
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.createNode(nodeData: Omit<VisNode, 'id'>)`
+    *   **Backend Handler:** `createNodeHandler`
+
+*   **Read Node:** `GET /api/node/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the node to retrieve.
+    *   **Response Body:** JSON object of the requested node.
+        ```json
+        {
+          "id": "10133099161583620",
+          "label": "WorkOrder",
+          "properties": { /* ... */ }
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.getNode(id: string | number)`
+    *   **Backend Handler:** `getNodeByIdHandler`
+
+*   **Update Node:** `PUT /api/node/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the node to update.
+    *   **Request Body:** JSON object with properties to update. Can include `label` and/or `properties`.
+        ```json
+        {
+          "label": "UpdatedWorkOrderLabel", // Optional
+          "properties": {
+            "status": "Closed",
+            "resolution": "Completed successfully"
+          }
+        }
+        ```
+    *   **Response Body:** JSON object of the updated node.
+    *   **Angular Service Method:** `GraphDataService.updateNode(id: string | number, nodeData: Partial<VisNode>)`
+    *   **Backend Handler:** `updateNodeHandler`
+
+*   **Delete Node:** `DELETE /api/node/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the node to delete.
+    *   **Response Body:** JSON object confirming deletion.
+        ```json
+        {
+          "message": "Node deleted successfully",
+          "deletedNodeId": "10133099161583620"
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.deleteNode(id: string | number)`
+    *   **Backend Handler:** `deleteNodeHandler`
+
+### Edge CRUD API Endpoints
+
+**(Note: While the API endpoints and corresponding service methods for Edge CRUD operations are implemented, they are pending comprehensive end-to-end testing. Please refer to the 'Current Development Status' section for more details.)**
+
+The backend (`backend/src/server.ts`) provides the following RESTful API endpoints for managing edges. Note that edge IDs are also string representations of their internal numeric AGE IDs, similar to nodes.
+
+*   **Create Edge:** `POST /api/edge`
+    *   **Request Body:** JSON object representing the edge to create.
+        ```json
+        {
+          "from": "10133099161583618", // Source Node Graph ID (stringified internal numeric ID)
+          "to": "10133099161583620",   // Target Node Graph ID (stringified internal numeric ID)
+          "label": "RELATED_TO",
+          "properties": {
+            "relationship_type": "dependency",
+            "strength": 0.75
+          }
+        }
+        ```
+    *   **Response Body:** JSON object of the created edge, including its auto-generated graph ID (stringified internal numeric ID).
+        ```json
+        {
+          "id": "11258999068426243", // Example graph ID for an edge (stringified internal numeric ID)
+          "from": "10133099161583618",
+          "to": "10133099161583620",
+          "label": "RELATED_TO", // This is the agtype label of the edge
+          "title": "{\n  \"relationship_type\": \"dependency\",\n  \"strength\": 0.75\n}", // Stringified properties for tooltip
+          "properties": {
+            "relationship_type": "dependency",
+            "strength": 0.75
+            // If the edge label was set as a property, it would also appear here, e.g., "label": "RELATED_TO_AS_PROP"
+          }
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.createEdge(edgeData: Omit<VisEdge, 'id'>)`
+    *   **Backend Handler:** `createEdgeHandler`
+
+*   **Read Edge:** `GET /api/edge/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the edge to retrieve (stringified internal numeric ID, e.g., "11258999068426243").
+    *   **Response Body:** JSON object of the requested edge.
+        ```json
+        {
+          "id": "11258999068426243",
+          "from": "10133099161583618",
+          "to": "10133099161583620",
+          "label": "RELATED_TO",
+          "properties": { /* ... */ }
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.getEdge(id: string)`
+    *   **Backend Handler:** `getEdgeByIdHandler`
+
+*   **Update Edge:** `PUT /api/edge/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the edge to update (stringified internal numeric ID).
+    *   **Request Body:** JSON object with properties to update. 
+        *Note: To change the edge's fundamental `label` (its type in AGE), you typically delete and recreate the edge with the new label. The `properties` can include a `label` field for display purposes, but this won't change the underlying AGE edge type if you are just updating properties.*
+        ```json
+        {
+          "properties": {
+            "strength": 0.95,
+            "status": "verified",
+            "label": "Updated Display Label" // This updates a property named 'label'
+          }
+        }
+        ```
+    *   **Response Body:** JSON object of the updated edge.
+    *   **Angular Service Method:** `GraphDataService.updateEdge(id: string, edgeData: Partial<Omit<VisEdge, 'from' | 'to'>>)`
+    *   **Backend Handler:** `updateEdgeHandler`
+
+*   **Delete Edge:** `DELETE /api/edge/:id`
+    *   **URL Parameter:** `:id` - The graph ID of the edge to delete (stringified internal numeric ID).
+    *   **Response Body:** JSON object confirming deletion.
+        ```json
+        {
+          "message": "Edge deleted successfully",
+          "id": "11258999068426243" // The ID of the deleted edge
+        }
+        ```
+    *   **Angular Service Method:** `GraphDataService.deleteEdge(id: string)`
+    *   **Backend Handler:** `deleteEdgeHandler`
 
 ### Search Functionality
 
@@ -231,6 +364,19 @@ This allows users to click a node/edge in the visualization and see its details 
     *   Clicking "Fetch Details" calls `selectNodeForUpdate()` or `selectEdgeForUpdate()`.
     *   These methods use `GraphDataService.getNode(id)` or `GraphDataService.getEdge(id)` to fetch details from the backend.
     *   The fetched data then updates the component's internal reference to the selected node or edge, and the component directly populates the form fields with this data.
+
+## Current Development Status
+
+The application is under active development. Key functionalities include:
+
+*   **Node Management**: Full CRUD (Create, Read, Update, Delete) operations for graph nodes, including their properties, are implemented and have been tested and working however, these operations are pending comprehensive end-to-end testing.
+*   **Edge Management**: Backend API endpoints and frontend service methods for Edge CRUD operations (Create, Read, Update, Delete), including their properties, are implemented. However, these operations are pending comprehensive end-to-end testing.
+*   **Graph Visualization**: Core graph rendering, display of nodes and edges with labels and properties (in tooltips), and basic interaction (click to select) are implemented.
+*   **Data Interaction**:
+    *   The editor panel can be populated by clicking nodes/edges in the visualization.
+    *   Nodes/edges can be fetched by ID for editing.
+    *   The graph visualization refreshes after CUD operations.
+*   **Search**: The UI for search submission is present, and the application flow for relaying search queries to the visualization component is established. Backend search logic and comprehensive frontend result display are areas for further development and testing.
 
 ## Component-wise Explanation
 

@@ -182,9 +182,9 @@ export class GraphEditorComponent implements OnChanges {
       return;
     }
     this.graphDataService.deleteNode(this.selectedNodeId).subscribe({
-      next: (response) => {
+      next: (response) => { // response is { message: string, deletedNodeId: string }
         console.log('Node deleted successfully:', response);
-        alert(`Node ID '${response.id}' deleted!`);
+        alert(`Node ID '${response.deletedNodeId}' deleted!`); // Changed from response.id to response.deletedNodeId
         this.graphChanged.emit();
         this.selectedNodeId = null;
         this.updateNodeLabel = '';

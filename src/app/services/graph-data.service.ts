@@ -114,9 +114,8 @@ export class GraphDataService {
     );
   }
 
-  deleteNode(id: string | number): Observable<{ id: string | number, message: string }> {
-    return this.http.delete<{ id: string | number, message: string }>(`${this.apiUrl}/node/${id}`).pipe(
-      map(response => ({ ...response, id: String(response.id) })), // Assuming backend sends {id: ..., message: ...}
+  deleteNode(id: string | number): Observable<any> { // Backend returns { message: string, deletedNodeId: string }
+    return this.http.delete<any>(`${this.apiUrl}/node/${id}`).pipe(
       catchError(this.handleError)
     );
   }
@@ -134,7 +133,12 @@ export class GraphDataService {
   }
 
   updateEdge(id: string | number, changes: { label?: string, properties?: any }): Observable<VisEdge> {
-    return this.http.put<VisEdge>(`${this.apiUrl}/edge/${id}`, changes).pipe(
+    const payload: any = { properties: { ...changes.properties } };
+    if (changes.label) {
+      payload.properties.label = changes.label; // Add label to properties if it exists
+    }
+
+    return this.http.put<VisEdge>(`${this.apiUrl}/edge/${id}`, payload).pipe(
       map(edge => ({
         ...edge,
         id: String(edge.id),
@@ -145,9 +149,9 @@ export class GraphDataService {
     );
   }
 
-  deleteEdge(id: string | number): Observable<{ id: string | number, message: string }> {
-    return this.http.delete<{ id: string | number, message: string }>(`${this.apiUrl}/edge/${id}`).pipe(
-      map(response => ({ ...response, id: String(response.id) })), // Assuming backend sends {id: ..., message: ...}
+  deleteEdge(id: string | number): Observable<{ id: string, message: string }> { // Ensure ID in response is string
+    return this.http.delete<{ id: string, message: string }>(`${this.apiUrl}/edge/${id}`).pipe(
+      map(response => ({ ...response, id: String(response.id) })), 
       catchError(this.handleError)
     );
   }
