@@ -4,7 +4,7 @@
 <!-- * * * * * * * * * * and can be replaced.  * * * * * * * * * * -->
 <!-- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * -->
 <!-- * * * * * * * * * Delete the template below * * * * * * * * * -->
-<!-- * * * * * * to get started with your project! * * * * * * * * -->
+<!-- * * * * * to get started with your project! * * * * * * * * * -->
 <!-- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * -->
 
 <mat-toolbar color="primary">
@@ -14,13 +14,13 @@
 <div class="container">
   <div class="editor-panel">
     <app-graph-editor 
-      [selectedNode]="selectedNodeForEditor" 
-      [selectedEdge]="selectedEdgeForEditor"
       (graphChanged)="handleGraphChanged()"
-      (searchSubmitted)="handleSearchSubmitted($event)">
+      (searchSubmitted)="handleSearchSubmitted($event)"
+      (rcaRequested)="handleRcaRequested($event)">
     </app-graph-editor>
   </div>
   <div class="visualization-panel">
-    <router-outlet />
+    <!-- Use router-outlet to display the routed component (GraphVisualizationComponent) -->
+    <router-outlet></router-outlet>
   </div>
 </div>

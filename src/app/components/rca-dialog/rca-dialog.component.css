@@ -1,0 +1,9 @@
+/* filepath: c:\\Projects\\GithubLocal\\pg-graph\\src\\app\\components\\rca-dialog\\rca-dialog.component.css */
+.error-card {
+  background-color: #f8d7da; /* Light red for errors */
+  color: #721c24; /* Dark red text */
+}
+
+mat-card-subtitle {
+  font-style: italic;
+}

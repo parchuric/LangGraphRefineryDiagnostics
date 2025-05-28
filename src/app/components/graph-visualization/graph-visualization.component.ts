@@ -1,7 +1,8 @@
-import { Component, OnInit, AfterViewInit, ElementRef, ViewChild, Inject, PLATFORM_ID, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, AfterViewInit, ElementRef, ViewChild, Inject, PLATFORM_ID, OnDestroy } from '@angular/core'; // Added OnDestroy
 import { isPlatformBrowser } from '@angular/common'; // Import isPlatformBrowser
 import { GraphDataService, GraphData, VisNode, VisEdge } from '../../services/graph-data.service';
 import { Network, DataSet } from 'vis-network/standalone/esm/vis-network.min'; // Import from standalone for better tree-shaking
+import { Subscription } from 'rxjs'; // Import Subscription
 
 @Component({
   selector: 'app-graph-visualization',
@@ -14,16 +15,18 @@ import { Network, DataSet } from 'vis-network/standalone/esm/vis-network.min'; /
     '[style.width]': "'100%'" // Also ensure width is 100%
   }
 })
-export class GraphVisualizationComponent implements OnInit, AfterViewInit {
+export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDestroy { // Implemented OnDestroy
 
   @ViewChild('visNetwork', { static: false }) visNetworkContainer!: ElementRef;
-  @Output() nodeClicked = new EventEmitter<VisNode>();
-  @Output() edgeClicked = new EventEmitter<VisEdge>();
+  // Remove Output event emitters for nodeClicked and edgeClicked
+  // @Output() nodeClicked = new EventEmitter<VisNode>();
+  // @Output() edgeClicked = new EventEmitter<VisEdge>();
 
   private networkInstance: Network | undefined;
   public graphData: GraphData = { nodes: [], edges: [] };
   private viewInitialized = false;
   private dataLoaded = false;
+  private graphRefreshSubscription!: Subscription;
 
   // Define colors for graph elements and legend
   public nodeColor = '#97C2FC'; // Default vis-network node color
@@ -38,6 +41,10 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit {
   ngOnInit(): void {
     if (isPlatformBrowser(this.platformId)) { // Check platform before potentially calling loadGraph
       this.fetchAndLoadGraph();
+      this.graphRefreshSubscription = this.graphDataService.graphRefreshNeeded$.subscribe(() => {
+        console.log('GraphVisualizationComponent: graphRefreshNeeded event received. Refreshing graph data.');
+        this.fetchAndLoadGraph();
+      });
     }
   }
 
@@ -77,6 +84,15 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit {
     } else {
       console.log('[tryLoadGraph] Conditions not met or not in browser.');
     }
+  }
+
+  private formatPropertiesForTooltip(properties: any): string {
+    if (!properties) {
+      return '';
+    }
+    return Object.entries(properties)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
   }
 
   private loadGraphActual(): void {
@@ -124,47 +140,14 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit {
     });
 
     const processedEdges = this.graphData.edges.map(edge => {
-      let title = edge.label; // Default title to edge label
-      if (edge.properties) {
-        const propsString = Object.entries(edge.properties)
-          .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-          .join('\n');
-        title = `${edge.label || 'Edge'}\n----------\n${propsString}`;
-      }
-      // Use id, from, to directly from edge object (service already converts them to string)
-      return { ...edge, title };
+      return { ...edge, title: this.formatPropertiesForTooltip(edge.properties) };
     });
 
-    console.log(`[loadGraphActual] Processed ${processedNodes.length} nodes and ${processedEdges.length} edges.`);
-    if (processedNodes.length === 0 && this.graphData.nodes && this.graphData.nodes.length > 0) {
-        console.warn('[loadGraphActual] Original graphData had nodes, but processedNodes is empty. Check mapping or data integrity.');
-    }
-    if (processedEdges.length === 0 && this.graphData.edges && this.graphData.edges.length > 0 && processedNodes.length > 0) {
-        console.warn('[loadGraphActual] Original graphData had edges, but processedEdges is empty while nodes are present. Check mapping or data integrity.');
-    }
+    const nodes = new DataSet<VisNode>(processedNodes);
+    const edges = new DataSet<VisEdge>(processedEdges);
 
-
-    const container = this.visNetworkContainer.nativeElement;
-    // Use processedNodes and processedEdges directly for DataSet creation
-    const nodesDataSet = new DataSet<VisNode>(processedNodes);
-    const edgesDataSet = new DataSet<VisEdge>(processedEdges);
-
-    console.log(`[loadGraphActual] DataSet created. Nodes in DataSet: ${nodesDataSet.length}, Edges in DataSet: ${edgesDataSet.length}`);
-    
-    const dataForNetwork = { nodes: nodesDataSet, edges: edgesDataSet };
-
-    // Destroy previous instance if it exists
-    if (this.networkInstance) {
-      console.log('[loadGraphActual] Destroying previous network instance.');
-      this.networkInstance.destroy();
-      this.networkInstance = undefined;
-    }
-
-    console.log('[loadGraphActual] Creating new Network instance.');
-    
-    // Removed unused 'nodes', 'edges', and 'data' variable declarations that created separate DataSets
-
-    const options = { // Original options
+    const data = { nodes, edges };
+    const options = {
       physics: {
         enabled: true,
         solver: 'forceAtlas2Based', 
@@ -238,95 +221,42 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit {
       }
     };
 
-    // const simpleOptions = { // Simplified options commented out
-    //   nodes: {
-    //     shape: 'dot',
-    //     size: 20,
-    //     color: 'red', // Make nodes very obvious
-    //     font: { size: 14, color: '#333' }
-    //   },
-    //   edges: {
-    //     width: 3,
-    //     color: 'blue', // Make edges very obvious
-    //     arrows: { to: { enabled: true, scaleFactor: 1 } },
-    //     smooth: false // Simplest way to disable smooth
-    //   },
-    //   interaction: {
-    //     dragNodes: true,
-    //     dragView: true,
-    //     zoomView: true
-    //   },
-    //   physics: {
-    //     enabled: true, // Keep physics, but simplify
-    //     solver: 'barnesHut', // A common, less complex solver
-    //     barnesHut: {
-    //       gravitationalConstant: -2000,
-    //       centralGravity: 0.1,
-    //       springLength: 95,
-    //       springConstant: 0.04,
-    //       damping: 0.09,
-    //       avoidOverlap: 0.1
-    //     },
-    //     stabilization: {
-    //       iterations: 200 // Fewer iterations for faster stabilization
-    //     }
-    //   },
-    //   layout: {
-    //     randomSeed: undefined // Let vis-network pick a seed or use its default
-    //   }
-    // };
-    // console.log('[loadGraphActual] Using SIMPLIFIED options:', simpleOptions);
+    if (this.networkInstance) {
+      this.networkInstance.destroy();
+    }
+    this.networkInstance = new Network(this.visNetworkContainer.nativeElement, data, options);
 
-
-    try {
-      console.log('[loadGraphActual] Attempting to create new Network instance with data:', dataForNetwork);
-      this.networkInstance = new Network(container, dataForNetwork, options); // Use original options
-      console.log('[loadGraphActual] Network instance CREATED successfully.');
-
-      // Explicitly set the size of the network canvas to fill its container
-      this.networkInstance.setSize('100%', '100%');
-      console.log('[loadGraphActual] Called networkInstance.setSize(\'100%\', \'100%\')');
-
-      this.networkInstance.fit();
-      console.log('[loadGraphActual] Called networkInstance.fit()');
-
-      // Add a slightly delayed re-fit and stabilization
-      setTimeout(() => {
-        if (this.networkInstance) {
-          console.log('[loadGraphActual] Performing delayed fit and stabilization.');
-          this.networkInstance.fit(); // Fit again
-          // Forcing stabilization might be too much if physics is simple,
-          // but can be tried if fit() alone doesn't help.
-          // this.networkInstance.stabilize(); 
+    // Event listeners for node and edge clicks
+    this.networkInstance.on('click', (params) => {
+      if (params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        const node = this.graphData.nodes.find(n => n.id === nodeId);
+        if (node) {
+          this.graphDataService.selectNode(node);
         }
-      }, 100);
-
-      this.networkInstance.on("click", (params) => {
-        if (params.nodes.length > 0) {
-          const nodeId = String(params.nodes[0]); // Ensure ID is a string
-          console.log('Clicked node ID:', nodeId);
-          const clickedNode = nodesDataSet.get(nodeId) as VisNode | null; // Cast to VisNode
-          if (clickedNode) {
-            console.log('Clicked node data:', clickedNode);
-            this.nodeClicked.emit(clickedNode);
-          } else {
-            console.warn('Clicked node not found in DataSet:', nodeId);
-          }
-        } else if (params.edges.length > 0) {
-          const edgeId = String(params.edges[0]); // Ensure ID is a string
-          console.log('Clicked edge ID:', edgeId);
-          const clickedEdge = edgesDataSet.get(edgeId) as VisEdge | null; // Cast to VisEdge
-          if (clickedEdge) {
-            console.log('Clicked edge data:', clickedEdge);
-            this.edgeClicked.emit(clickedEdge);
-          } else {
-            console.warn('Clicked edge not found in DataSet:', edgeId);
-          }
+      } else if (params.edges.length > 0) {
+        const edgeId = params.edges[0];
+        const edge = this.graphData.edges.find(e => e.id === edgeId);
+        if (edge) {
+          this.graphDataService.selectEdge(edge);
         }
-      });
+      } else {
+        // Clicked on empty space, clear selections
+        this.graphDataService.selectNode(null);
+        this.graphDataService.selectEdge(null);
+      }
+    });
 
-    } catch (error) {
-      console.error('[loadGraphActual] Error initializing vis-network:', error);
+    console.log('[loadGraphActual] Network initialized.');
+  }
+
+  ngOnDestroy(): void {
+    if (this.graphRefreshSubscription) {
+      this.graphRefreshSubscription.unsubscribe();
+    }
+    if (this.networkInstance) {
+      this.networkInstance.destroy();
+      this.networkInstance = undefined;
     }
   }
 }

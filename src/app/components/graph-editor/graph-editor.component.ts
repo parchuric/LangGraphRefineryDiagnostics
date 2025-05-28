@@ -1,7 +1,8 @@
-import { Component, EventEmitter, Output, Input, OnChanges, SimpleChanges } from '@angular/core'; // Added Input, OnChanges, SimpleChanges
+import { Component, EventEmitter, Output, Input, OnChanges, SimpleChanges, OnInit, OnDestroy } from '@angular/core'; // Added OnInit, OnDestroy
 import { GraphDataService, VisNode, VisEdge } from '../../services/graph-data.service'; // Added VisEdge
 import { FormsModule } from '@angular/forms'; // Import FormsModule
 import { CommonModule } from '@angular/common'; // Import CommonModule
+import { Subscription } from 'rxjs'; // Import Subscription
 
 @Component({
   selector: 'app-graph-editor',
@@ -10,7 +11,7 @@ import { CommonModule } from '@angular/common'; // Import CommonModule
   templateUrl: './graph-editor.component.html',
   styleUrls: ['./graph-editor.component.css']
 })
-export class GraphEditorComponent implements OnChanges {
+export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // Implemented OnInit, OnDestroy
   newNodeLabel: string = '';
   newNodePropertiesString: string = '{}'; // Expect JSON string for properties
   
@@ -35,50 +36,110 @@ export class GraphEditorComponent implements OnChanges {
 
   @Output() graphChanged = new EventEmitter<void>();
 
-  @Input() selectedNode: VisNode | null = null;
-  @Input() selectedEdge: VisEdge | null = null;
+  @Input() selectedNode: VisNode | null = null; // This can be removed if direct binding is no longer needed
+  @Input() selectedEdge: VisEdge | null = null; // This can be removed if direct binding is no longer needed
+
+  // New EventEmitter for RCA
+  @Output() rcaRequested = new EventEmitter<{ nodeId: string | number, nodeData: VisNode }>();
+
+  private nodeSubscription!: Subscription;
+  private edgeSubscription!: Subscription;
 
   constructor(private graphDataService: GraphDataService) { }
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['selectedNode'] && this.selectedNode) {
-      console.log('GraphEditorComponent: selectedNode input changed', this.selectedNode);
-      this.selectedNodeId = this.selectedNode.id;
-      this.updateNodeLabel = this.selectedNode.label || '';
-      this.updatePropertiesString = JSON.stringify(this.selectedNode.properties || {});
-      // Clear edge selection if a node is selected
-      this.selectedEdgeId = null;
-      this.updateEdgeLabel = '';
-      this.updateEdgePropertiesString = '{}';
-      this.newEdgeFromId = '';
-      this.newEdgeToId = '';
-    } else if (changes['selectedNode'] && !this.selectedNode) {
-        // If selectedNode becomes null (e.g., an edge was clicked or selection cleared)
-        this.selectedNodeId = null;
-        this.updateNodeLabel = '';
-        this.updatePropertiesString = '{}';
-    }
-
-    if (changes['selectedEdge'] && this.selectedEdge) {
-      console.log('GraphEditorComponent: selectedEdge input changed', this.selectedEdge);
-      // Ensure selectedEdge.id is not undefined before assigning
-      this.selectedEdgeId = this.selectedEdge.id !== undefined ? this.selectedEdge.id : null;
-      this.updateEdgeLabel = this.selectedEdge.label || '';
-      this.updateEdgePropertiesString = JSON.stringify(this.selectedEdge.properties || {});
-      this.newEdgeFromId = String(this.selectedEdge.from); // Populate for potential edge modification/creation context
-      this.newEdgeToId = String(this.selectedEdge.to);
-      // Clear node selection if an edge is selected
-      this.selectedNodeId = null;
-      this.updateNodeLabel = '';
-      this.updatePropertiesString = '{}';
-    } else if (changes['selectedEdge'] && !this.selectedEdge) {
-        // If selectedEdge becomes null
+  ngOnInit(): void {
+    this.nodeSubscription = this.graphDataService.selectedNode$.subscribe(node => {
+      this.selectedNode = node; // Update local selectedNode
+      if (node) {
+        this.selectedNodeId = node.id;
+        this.updateNodeLabel = node.label || '';
+        this.updatePropertiesString = JSON.stringify(node.properties || {});
+        // Clear edge selection when a node is selected via service
         this.selectedEdgeId = null;
         this.updateEdgeLabel = '';
         this.updateEdgePropertiesString = '{}';
-        // Optionally clear newEdgeFromId and newEdgeToId if they were only populated due to edge selection
-        // this.newEdgeFromId = ''; 
-        // this.newEdgeToId = '';
+        this.newEdgeFromId = '';
+        this.newEdgeToId = '';
+      } else {
+        this.selectedNodeId = null;
+        this.updateNodeLabel = '';
+        this.updatePropertiesString = '{}';
+      }
+    });
+
+    this.edgeSubscription = this.graphDataService.selectedEdge$.subscribe(edge => {
+      this.selectedEdge = edge; // Update local selectedEdge
+      if (edge) {
+        this.selectedEdgeId = edge.id !== undefined ? edge.id : null;
+        this.updateEdgeLabel = edge.label || '';
+        this.updateEdgePropertiesString = JSON.stringify(edge.properties || {});
+        this.newEdgeFromId = String(edge.from);
+        this.newEdgeToId = String(edge.to);
+        // Clear node selection when an edge is selected via service
+        this.selectedNodeId = null;
+        this.updateNodeLabel = '';
+        this.updatePropertiesString = '{}';
+      } else {
+        this.selectedEdgeId = null;
+        this.updateEdgeLabel = '';
+        this.updateEdgePropertiesString = '{}';
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    if (this.nodeSubscription) {
+      this.nodeSubscription.unsubscribe();
+    }
+    if (this.edgeSubscription) {
+      this.edgeSubscription.unsubscribe();
+    }
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Keep ngOnChanges if selectedNode/selectedEdge are still used as @Inputs for initial binding
+    // or if there are other @Input properties that need handling.
+    // If selectedNode and selectedEdge are purely driven by the service now,
+    // much of the logic here might be redundant or can be simplified.
+
+    if (changes['selectedNode'] && this.selectedNode) {
+      console.log('GraphEditorComponent: selectedNode input changed (ngOnChanges)', this.selectedNode);
+      // This logic might conflict or be redundant with ngOnInit if service also updates it.
+      // Consider if this is still needed or if ngOnInit covers it.
+      if (this.selectedNodeId !== this.selectedNode.id) { // Prevent re-processing if already set by service
+        this.selectedNodeId = this.selectedNode.id;
+        this.updateNodeLabel = this.selectedNode.label || '';
+        this.updatePropertiesString = JSON.stringify(this.selectedNode.properties || {});
+        this.selectedEdgeId = null;
+        this.updateEdgeLabel = '';
+        this.updateEdgePropertiesString = '{}';
+        this.newEdgeFromId = '';
+        this.newEdgeToId = '';
+      }
+    } else if (changes['selectedNode'] && !this.selectedNode && this.selectedNodeId !== null) {
+        // If selectedNode input becomes null and it wasn't already null
+        // this.selectedNodeId = null; // Handled by service subscription
+        // this.updateNodeLabel = '';
+        // this.updatePropertiesString = '{}';
+    }
+
+    if (changes['selectedEdge'] && this.selectedEdge) {
+      console.log('GraphEditorComponent: selectedEdge input changed (ngOnChanges)', this.selectedEdge);
+      // Similar to selectedNode, consider redundancy with ngOnInit
+      if (this.selectedEdgeId !== (this.selectedEdge.id !== undefined ? this.selectedEdge.id : null)) {
+        this.selectedEdgeId = this.selectedEdge.id !== undefined ? this.selectedEdge.id : null;
+        this.updateEdgeLabel = this.selectedEdge.label || '';
+        this.updateEdgePropertiesString = JSON.stringify(this.selectedEdge.properties || {});
+        this.newEdgeFromId = String(this.selectedEdge.from);
+        this.newEdgeToId = String(this.selectedEdge.to);
+        this.selectedNodeId = null;
+        this.updateNodeLabel = '';
+        this.updatePropertiesString = '{}';
+      }
+    } else if (changes['selectedEdge'] && !this.selectedEdge && this.selectedEdgeId !== null) {
+        // this.selectedEdgeId = null; // Handled by service subscription
+        // this.updateEdgeLabel = '';
+        // this.updateEdgePropertiesString = '{}';
     }
   }
 
@@ -101,6 +162,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Node created successfully:', newNode);
         alert(`Node '${newNode.label}' (ID: ${newNode.id}) created!`);
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         // Clear form
         this.newNodeLabel = '';
         this.newNodePropertiesString = '{}';
@@ -162,6 +224,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Node updated successfully:', updatedNode);
         alert(`Node ID '${updatedNode.id}' updated!`);
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         this.selectedNodeId = null;
         this.updateNodeLabel = '';
         this.updatePropertiesString = '{}';
@@ -186,6 +249,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Node deleted successfully:', response);
         alert(`Node ID '${response.deletedNodeId}' deleted!`); // Changed from response.id to response.deletedNodeId
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         this.selectedNodeId = null;
         this.updateNodeLabel = '';
         this.updatePropertiesString = '{}'; // Clear update form as well
@@ -223,6 +287,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Edge created successfully:', newEdge);
         alert(`Edge '${newEdge.label}' (ID: ${newEdge.id}) created from ${newEdge.from} to ${newEdge.to}!`);
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         // Clear form
         this.newEdgeFromId = '';
         this.newEdgeToId = '';
@@ -288,6 +353,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Edge updated successfully:', updatedEdge);
         alert(`Edge ID '${updatedEdge.id}' updated!`);
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         this.selectedEdgeId = null;
         this.updateEdgeLabel = '';
         this.updateEdgePropertiesString = '{}';
@@ -312,6 +378,7 @@ export class GraphEditorComponent implements OnChanges {
         console.log('Edge deleted successfully:', response);
         alert(`Edge ID '${response.id}' deleted!`);
         this.graphChanged.emit();
+        this.graphDataService.requestGraphRefresh(); // Signal refresh via service
         this.selectedEdgeId = null;
         this.updateEdgeLabel = '';
         this.updateEdgePropertiesString = '{}';
@@ -321,6 +388,19 @@ export class GraphEditorComponent implements OnChanges {
         alert('Failed to delete edge. See console for details.');
       }
     });
+  }
+
+  analyzeRootCause(): void {
+    if (this.selectedNodeId && this.selectedNode) {
+      console.log('Analyze Root Cause button clicked for node ID:', this.selectedNodeId);
+      // Emit an event with the node ID and the full node data
+      this.rcaRequested.emit({ nodeId: this.selectedNodeId, nodeData: this.selectedNode });
+      // For now, we'll just log. Later, this will call a service.
+      alert(`RCA requested for node: ${this.selectedNode.label} (ID: ${this.selectedNodeId})`);
+    } else {
+      alert('Please select a node first to analyze its root cause.');
+      console.warn('analyzeRootCause called without a selected node.');
+    }
   }
 
   onSearch(): void {

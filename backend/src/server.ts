@@ -1,14 +1,45 @@
 console.log('########## EXECUTING backend/src/server.ts ##########');
-import express, { Express, RequestHandler, Response } from 'express'; // Added Response for explicit typing
-import { Pool, PoolConfig } from 'pg';
+import express, { Express, Request, Response, NextFunction, RequestHandler } from 'express'; 
+import { Pool, PoolConfig, PoolClient } from 'pg'; // Added PoolClient
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { ParsedQs } from 'qs';
-import { ParamsDictionary } from 'express-serve-static-core';
 import fs from 'fs';
 import path from 'path';
+import OpenAI from 'openai'; 
+import { ParsedQs } from 'qs'; // Ensure qs is imported for ParsedQs
+import { ParamsDictionary } from 'express-serve-static-core'; // Ensure this is imported for ParamsDictionary
 
 dotenv.config();
+
+// Initialize OpenAI client
+const azureOpenAIApiKey = process.env.AZURE_OPENAI_API_KEY;
+const azureOpenAIApiInstanceName = process.env.AZURE_OPENAI_ENDPOINT; 
+const azureOpenAIApiDeploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+const azureOpenAIApiVersion = process.env.AZURE_OPENAI_API_VERSION || '2023-07-01-preview';
+
+const openAIApiKey = process.env.OPENAI_API_KEY;
+const openAIModelName = process.env.OPENAI_MODEL_NAME || 'gpt-3.5-turbo';
+
+let openai: OpenAI;
+
+if (azureOpenAIApiKey && azureOpenAIApiInstanceName && azureOpenAIApiDeploymentName) {
+  console.log("Initializing Azure OpenAI client...");
+  openai = new OpenAI({
+    apiKey: azureOpenAIApiKey,
+    baseURL: `${azureOpenAIApiInstanceName}/openai/deployments/${azureOpenAIApiDeploymentName}`,
+    defaultQuery: { 'api-version': azureOpenAIApiVersion },
+    defaultHeaders: { 'api-key': azureOpenAIApiKey },
+  });
+  console.log("Azure OpenAI client initialized.");
+} else if (openAIApiKey) {
+  console.log("Initializing standard OpenAI client...");
+  openai = new OpenAI({
+    apiKey: openAIApiKey,
+  });
+  console.log("Standard OpenAI client initialized.");
+} else {
+  console.error("OpenAI API key not found. Please set OPENAI_API_KEY or Azure OpenAI environment variables.");
+}
 
 const app: Express = express();
 const port = process.env.PORT || 3000;
@@ -16,9 +47,8 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Type definitions for Vis Network (matching frontend)
 interface VisNode {
-  id: string; // Changed from number | string
+  id: string; 
   label?: string;
   title?: string;
   group?: string;
@@ -29,9 +59,9 @@ interface VisNode {
 }
 
 interface VisEdge {
-  id?: string; // Changed from number | string, and ensure it's always string if present
-  from: string; // Changed from number | string
-  to: string;   // Changed from number | string
+  id?: string; 
+  from: string; 
+  to: string;   
   label?: string;
   title?: string;
   properties?: Record<string, any>;
@@ -42,11 +72,17 @@ interface GraphData {
   edges: VisEdge[];
 }
 
-// --- SSL Configuration: Load a single CA certificate bundle ---
-const caBundleFilename = 'bundle.pem'; // The concatenated bundle of all three CAs
+// Added SubgraphContext interface
+interface SubgraphContext {
+  selectedNode: ParsedAgEntity;
+  neighborNodes: ParsedAgEntity[];
+  connectingEdges: ParsedAgEntity[];
+}
+
+const caBundleFilename = 'bundle.pem'; 
 const caBundlePath = path.join(__dirname, '..', 'src', caBundleFilename);
 
-let sslOptions: PoolConfig['ssl'] = { rejectUnauthorized: true }; // Default to secure
+let sslOptions: PoolConfig['ssl'] = { rejectUnauthorized: true }; 
 
 console.log(`Attempting to load CA certificate bundle: ${caBundleFilename} from backend/src/ directory...`);
 if (fs.existsSync(caBundlePath)) {
@@ -54,7 +90,7 @@ if (fs.existsSync(caBundlePath)) {
     const caContent = fs.readFileSync(caBundlePath).toString();
     console.warn('!!!! INSECURE DEVELOPMENT MODE !!!! Forcing rejectUnauthorized to false. DO NOT USE IN PRODUCTION. Revert this change after testing and before any deployment.');
     sslOptions = {
-      rejectUnauthorized: false,       // INSECURE: Bypass certificate verification for E2E testing
+      rejectUnauthorized: false,       
       ca: caContent,                  
       servername: process.env.DB_HOST 
     };
@@ -66,7 +102,7 @@ if (fs.existsSync(caBundlePath)) {
       `!!!! INSECURE DEVELOPMENT MODE !!!! Forcing rejectUnauthorized to false. DO NOT USE IN PRODUCTION. Revert this change after testing and before any deployment.`
     );
     sslOptions = { 
-      rejectUnauthorized: false, // INSECURE: Bypass certificate verification for E2E testing
+      rejectUnauthorized: false, 
       servername: process.env.DB_HOST 
     }; 
   }
@@ -76,37 +112,26 @@ if (fs.existsSync(caBundlePath)) {
     `!!!! INSECURE DEVELOPMENT MODE !!!! Forcing rejectUnauthorized to false. DO NOT USE IN PRODUCTION. Revert this change after testing and before any deployment.`
   );
   sslOptions = {
-    rejectUnauthorized: false, // INSECURE: Bypass certificate verification for E2E testing
+    rejectUnauthorized: false, 
     servername: process.env.DB_HOST 
   };
 }
-// To disable SSL/TLS, set ssl to false or an object that results in it being disabled.
-// For node-postgres, setting ssl: false should disable TLS.
-// If connecting to a local instance or one that doesn't require/enforce SSL:
-// const sslOptions: PoolConfig['ssl'] = false; 
-// console.log("SSL/TLS is explicitly disabled for the database connection.");
-// --- End SSL Configuration ---
 
-// Database connection setup
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   database: process.env.DB_DATABASE,
   password: process.env.DB_PASSWORD,
   port: parseInt(process.env.DB_PORT || '5432'),
-  ssl: sslOptions, // Use the configured SSL settings
+  ssl: sslOptions, 
 });
 
-// Helper to parse AGE agtype values
-
-// Intermediate type for parsed agtype_out string
 interface ParsedAgEntity {
-  id: number; // This is the numeric internal ID
+  id: string; // Changed from number
   label: string;
   properties: Record<string, any>;
-  // For edges
-  start_id?: number; // Numeric internal ID
-  end_id?: number;   // Numeric internal ID
+  start_id?: string; // Changed from number
+  end_id?: string;   // Changed from number
 }
 
 function parseAgtypeOutputString(agtypeString: string): ParsedAgEntity | null {
@@ -118,98 +143,80 @@ function parseAgtypeOutputString(agtypeString: string): ParsedAgEntity | null {
   try {
     const trimmedString = agtypeString.trim();
     console.log('parseAgtypeOutputString: Trimmed input:', trimmedString); 
-    // Use the simpler regex from SulfurGraphExplorer
-    const jsonString = trimmedString.replace(/::\w+$/, ''); 
-    console.log('parseAgtypeOutputString: String after regex replace (attempting to parse as JSON):', jsonString);
+    
+    let jsonToParse = trimmedString.replace(/::\w+$/, '');
+    console.log('parseAgtypeOutputString: String after type suffix removal:', jsonToParse);
 
-    const parsed = JSON.parse(jsonString);
+    // Regex to find number values for "id", "start_id", "end_id" and quote them to preserve precision
+    // This handles: "id": 123, "id":123, "id" : 123
+    // It ensures that when JSON.parse runs, these specific ID fields are treated as strings.
+    jsonToParse = jsonToParse.replace(/"(id|start_id|end_id)"\s*:\s*(\d+)/g, '"$1": "$2"');
+    console.log('parseAgtypeOutputString: String after ID quoting for JSON.parse:', jsonToParse);
 
-    // Basic validation
+    const parsed = JSON.parse(jsonToParse);
+
     if (parsed === null || typeof parsed !== 'object') {
-        console.error('parseAgtypeOutputString: Parsed data is not an object or is null:', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+        console.error('parseAgtypeOutputString: Parsed data is not an object or is null:', parsed, 'Original agtypeString:', agtypeString, 'jsonToParse:', jsonToParse);
         return null;
     }
-    if (typeof parsed.id !== 'number' || typeof parsed.label !== 'string' || typeof parsed.properties !== 'object') {
-        console.error('parseAgtypeOutputString: Parsed object missing required fields (id (number), label (string), properties (object)):', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+    // Validate core fields, expecting id to be a string now
+    if (typeof parsed.id !== 'string' || typeof parsed.label !== 'string' || typeof parsed.properties !== 'object') {
+        console.error('parseAgtypeOutputString: Parsed object missing required fields (id (string), label (string), properties (object)):', parsed, 'Original agtypeString:', agtypeString, 'jsonToParse:', jsonToParse);
         return null;
     }
-    // For edges, start_id and end_id are expected
-    // Check trimmedString for '::edge' as jsonString has it removed
+    
+    const entity: Partial<ParsedAgEntity> = {
+      id: parsed.id, // Already a string due to regex quoting
+      label: parsed.label,
+      properties: parsed.properties,
+    };
+
     if (trimmedString.includes('::edge') || ('start_id' in parsed || 'end_id' in parsed)) { 
-        if (typeof parsed.start_id !== 'number' || typeof parsed.end_id !== 'number') {
-            console.error('parseAgtypeOutputString: Parsed edge object has invalid or missing start_id/end_id (must be numbers):', parsed, 'Original agtypeString:', agtypeString, 'jsonString:', jsonString);
+        if (typeof parsed.start_id === 'string') {
+            entity.start_id = parsed.start_id; // Already a string
+        } else {
+            console.error('parseAgtypeOutputString: Parsed edge object has invalid or missing start_id (must be string):', parsed, 'Original agtypeString:', agtypeString, 'jsonToParse:', jsonToParse);
+            return null;
+        }
+        if (typeof parsed.end_id === 'string') {
+            entity.end_id = parsed.end_id; // Already a string
+        } else {
+            console.error('parseAgtypeOutputString: Parsed edge object has invalid or missing end_id (must be string):', parsed, 'Original agtypeString:', agtypeString, 'jsonToParse:', jsonToParse);
             return null;
         }
     }
-    console.log('parseAgtypeOutputString: Successfully parsed:', parsed);
-    return parsed as ParsedAgEntity;
+    console.log('parseAgtypeOutputString: Successfully parsed:', entity);
+    return entity as ParsedAgEntity;
   } catch (e) {
-    // Log the string that failed to parse along with the original agtype string
-    const stringThatFailedParse = agtypeString.trim().replace(/::\w+$/, '');
-    console.error('parseAgtypeOutputString: Error during JSON.parse or validation. Original agtypeString:', agtypeString, 'Attempted to parse (jsonString):', stringThatFailedParse, 'Error:', e);
+    const stringThatFailedParse = agtypeString.trim().replace(/::\w+$/, '').replace(/"(id|start_id|end_id)"\s*:\s*(\d+)/g, '"$1": "$2"');
+    console.error('parseAgtypeOutputString: Error during JSON.parse or validation. Original agtypeString:', agtypeString, 'Attempted to parse (jsonToParse):', stringThatFailedParse, 'Error:', e);
     return null;
   }
 }
 
-
-// Define a type for the JSON response from agtype_to_json
-// NO LONGER USED - Replaced by ParsedAgEntity and manual parsing
-/*
-interface AgJsonResponseBase {
-  id: string; 
-  label: string;
-  properties: Record<string, any>;
-}
-interface AgJsonNodeResponse extends AgJsonResponseBase {}
-interface AgJsonEdgeResponse extends AgJsonResponseBase {
-  start_id: string; 
-  end_id: string;   
-}
-type AgJsonResponse = AgJsonNodeResponse | AgJsonEdgeResponse;
-*/
-
-// REMOVE THE parseAgTypeValue function as it's no longer needed
-// function parseAgTypeValue(value: string): AgTypeNode | AgTypeEdge | null { ... }
-
-// Type for rows from node/edge queries
 interface AgEntityRow {
-  ag_vertex_string_out?: string; // Changed from ag_vertex_jsonb
-  ag_edge_string_out?: string;   // Changed from ag_edge_jsonb
-  // Fields for direct values if not using jsonb objects (e.g. for count or simple returns)
-  node_count?: any; // Keep for count queries
-  deleted_node_id?: string; // Keep for delete confirmation
-  deleted_edge_id?: string; // Keep for delete confirmation
-  // Removed id, label, properties, start_id, end_id, start_label, end_label as they will be in the parsed string
+  ag_vertex_string_out?: string; 
+  ag_edge_string_out?: string;   
+  node_count?: any; 
+  deleted_node_id?: string; 
+  deleted_edge_id?: string; 
 }
 
-// Function to test database connection and AGE setup
 async function testDatabaseConnection() {
   let client;
-  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph'; // Define graphName here
+  const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph'; 
   try {
-    client = await pool.connect(); // Initialize client
+    client = await pool.connect(); 
     console.log('testDatabaseConnection: Successfully connected to database.');
-    await client.query("SET search_path = ag_catalog, '$user', public;"); // Set search_path
+    await client.query("SET search_path = ag_catalog, '$user', public;"); 
     console.log('testDatabaseConnection: search_path set.');
 
-    // Test ag_catalog.age_version()
-    /* // Commenting out due to function not existing in Azure AGE 1.5.0
-    try {
-      const versionResult = await client.query("SELECT ag_catalog.age_version();");
-      console.log('testDatabaseConnection: ag_catalog.age_version() result:', versionResult.rows);
-    } catch (e) {
-      console.error('testDatabaseConnection: Error calling ag_catalog.age_version():', e);
-    }
-    */
-
-    const cypherQuery = `SELECT * from cypher('${graphName}', $$ MATCH (n) RETURN n LIMIT 1 $$) as (n agtype);`; // Added LIMIT 1
+    const cypherQuery = `SELECT * from cypher('${graphName}', $$ MATCH (n) RETURN n LIMIT 1 $$) as (n agtype);`; 
     console.log(`Executing test Cypher query: ${cypherQuery}`);
     const res = await client.query(cypherQuery);
     console.log('Test Cypher query executed. Results:', res.rows);
-    if (res.rows.length > 0 && res.rows[0].n) { // Check res.rows[0].n
+    if (res.rows.length > 0 && res.rows[0].n) { 
       console.log('Successfully fetched data with AGE. Raw agtype:', res.rows[0].n);
-      // Test ag_catalog.agtype_to_json() with the fetched agtype in a combined query
-      // Modify this test to use agtype_out and the new parser
       try {
         const agtypeOutTestQuery = `
           WITH graph_data AS (
@@ -250,16 +257,141 @@ async function testDatabaseConnection() {
   }
 }
 
+// New function to fetch neighborhood context
+async function fetchNeighborhood(nodeIdStr: string, graphName: string): Promise<SubgraphContext | null> {
+  console.log(`[fetchNeighborhood] Entered. Node ID: ${nodeIdStr}, Graph Name: ${graphName}`);
+  let client: PoolClient | undefined;
+  try {
+    client = await pool.connect();
+    console.log('[fetchNeighborhood] Database client connected.');
+    await client.query("SET search_path = ag_catalog, '$user', public;");
+    console.log('[fetchNeighborhood] search_path set.');
+
+    // Validate that nodeIdStr is a string representation of an integer
+    // AGE IDs are bigints, which can be larger than JS Number.MAX_SAFE_INTEGER.
+    // However, the client sends it as a string, and we use it as a string in Cypher.
+    // This validation is more about ensuring it's a numeric string, not its magnitude.
+    if (!/^\d+$/.test(nodeIdStr)) {
+      console.error(`[fetchNeighborhood] Invalid node ID format (not a numeric string): ${nodeIdStr}`);
+      if (client) client.release(); // Release client before early return
+      return null;
+    }
+    console.log(`[fetchNeighborhood] Node ID ${nodeIdStr} format validated as numeric string.`);
+
+    // Fetch the selected node using toString(id(n)) for ID comparison
+    // Interpolating nodeIdStr directly due to issues with $1 placeholder within cypher()
+    const selectedNodeCypherQuery = `MATCH (n) WHERE toString(id(n)) = \'${nodeIdStr}\' RETURN n`;
+    const selectedNodeQuery = `
+      SELECT ag_catalog.agtype_out(query_result.v) AS node_data
+      FROM cypher($$${graphName}$$, $$${selectedNodeCypherQuery}$$) AS query_result(v agtype);
+    `;
+    console.log(`[fetchNeighborhood] Executing selectedNodeQuery with ID ${nodeIdStr}:`, selectedNodeQuery);
+    // Note: No parameters array needed for client.query if $1 is removed
+    const selectedNodeRes = await client.query<{ node_data: string }>(selectedNodeQuery);
+    console.log('[fetchNeighborhood] selectedNodeQuery raw result:', JSON.stringify(selectedNodeRes.rows, null, 2));
+
+    if (selectedNodeRes.rows.length === 0 || !selectedNodeRes.rows[0].node_data) {
+      console.error(`[fetchNeighborhood] Selected node with ID ${nodeIdStr} not found. Query returned no data or no node_data field.`);
+      if (client) client.release(); // Release client
+      return null;
+    }
+    console.log(`[fetchNeighborhood] Raw selected node data string: ${selectedNodeRes.rows[0].node_data}`);
+    const selectedNode = parseAgtypeOutputString(selectedNodeRes.rows[0].node_data);
+    if (!selectedNode) {
+        console.error(`[fetchNeighborhood] Failed to parse selected node data for ID ${nodeIdStr}. Raw data: ${selectedNodeRes.rows[0].node_data}`);
+        if (client) client.release(); // Release client
+        return null;
+    }
+    console.log('[fetchNeighborhood] Parsed selected node:', JSON.stringify(selectedNode, null, 2));
+
+    // Fetch neighbors and relationships using toString(id(n)) for ID comparison
+    // Interpolating nodeIdStr directly
+    const neighborhoodCypherQuery = `MATCH (n)-[r]-(m) WHERE toString(id(n)) = \'${nodeIdStr}\' RETURN r, m`;
+    const neighborhoodQuery = `
+      SELECT
+        ag_catalog.agtype_out(query_result.r) AS edge_data,
+        ag_catalog.agtype_out(query_result.m) AS neighbor_node_data
+      FROM cypher($$${graphName}$$, $$${neighborhoodCypherQuery}$$) AS query_result(r agtype, m agtype);
+    `;
+    console.log(`[fetchNeighborhood] Executing neighborhoodQuery with ID ${nodeIdStr}:`, neighborhoodQuery);
+    // Note: No parameters array needed for client.query if $1 is removed
+    const neighborhoodRes = await client.query<{ edge_data: string; neighbor_node_data: string }>(neighborhoodQuery);
+    console.log('[fetchNeighborhood] neighborhoodQuery raw result:', JSON.stringify(neighborhoodRes.rows, null, 2));
+
+    const neighborNodes: ParsedAgEntity[] = [];
+    const connectingEdges: ParsedAgEntity[] = [];
+    const seenNodeIds = new Set<string>();
+    const seenEdgeIds = new Set<string>();
+
+    seenNodeIds.add(selectedNode.id); // selectedNode.id is now string
+    console.log(`[fetchNeighborhood] Initialized seenNodeIds with selected node ID: ${selectedNode.id}`);
+
+    for (const row of neighborhoodRes.rows) {
+      console.log('[fetchNeighborhood] Processing neighborhood row:', JSON.stringify(row, null, 2));
+      const edge = parseAgtypeOutputString(row.edge_data);
+      const neighbor = parseAgtypeOutputString(row.neighbor_node_data);
+
+      console.log('[fetchNeighborhood] Parsed edge from row:', JSON.stringify(edge, null, 2));
+      console.log('[fetchNeighborhood] Parsed neighbor from row:', JSON.stringify(neighbor, null, 2));
+
+      if (edge && !seenEdgeIds.has(edge.id)) {
+        connectingEdges.push(edge);
+        seenEdgeIds.add(edge.id);
+        console.log(`[fetchNeighborhood] Added edge ID ${edge.id} to connectingEdges and seenEdgeIds.`);
+      } else if (edge) {
+        console.log(`[fetchNeighborhood] Edge ID ${edge.id} already seen or edge is null.`);
+      } else {
+        console.log(`[fetchNeighborhood] Edge data could not be parsed from row: ${row.edge_data}`);
+      }
+
+      if (neighbor && !seenNodeIds.has(neighbor.id)) {
+        neighborNodes.push(neighbor);
+        seenNodeIds.add(neighbor.id);
+        console.log(`[fetchNeighborhood] Added neighbor node ID ${neighbor.id} to neighborNodes and seenNodeIds.`);
+      } else if (neighbor) {
+        console.log(`[fetchNeighborhood] Neighbor node ID ${neighbor.id} already seen or neighbor is null.`);
+      } else {
+        console.log(`[fetchNeighborhood] Neighbor node data could not be parsed from row: ${row.neighbor_node_data}`);
+      }
+    }
+
+    const resultContext: SubgraphContext = {
+      selectedNode,
+      neighborNodes,
+      connectingEdges,
+    };
+    console.log('[fetchNeighborhood] Successfully fetched and processed neighborhood. Result:', JSON.stringify(resultContext, null, 2));
+    return resultContext;
+
+  } catch (error) {
+    console.error('[fetchNeighborhood] Error fetching neighborhood:', error);
+    // Ensure the error object is fully logged, including potential 'message' and 'stack'
+    if (error instanceof Error) {
+        console.error(`[fetchNeighborhood] Error message: ${error.message}`);
+        console.error(`[fetchNeighborhood] Error stack: ${error.stack}`);
+    } else {
+        console.error('[fetchNeighborhood] Non-Error object thrown:', error);
+    }
+    return null; // Return null on error
+  } finally {
+    if (client) {
+        client.release();
+        console.log('[fetchNeighborhood] Database client released.');
+    } else {
+        console.log('[fetchNeighborhood] Client was not defined or already released, no release needed in finally.');
+    }
+  }
+}
+
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res): Promise<void> => { // Explicit Promise<void> for consistency
+app.get('/', (req, res): Promise<void> => { 
   res.send('Hello from the backend! Database connection test will run on startup.');
-  return Promise.resolve(); // Explicitly return a resolved promise for void
+  return Promise.resolve(); 
 });
 
-// Define a new route for fetching graph data
-app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<void>
+app.get('/api/graph', async (req, res): Promise<void> => { 
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
 
@@ -267,7 +399,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     client = await pool.connect();
     console.log('GET /api/graph: Successfully connected to database.');
 
-    // Log current_user and session_user
     try {
         const userQueryResult = await client.query("SELECT current_user, session_user;");
         console.log('GET /api/graph: DB User Context:', userQueryResult.rows[0]);
@@ -278,7 +409,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     await client.query("SET search_path = ag_catalog, '$user', public;");
     console.log('GET /api/graph: search_path set command executed.');
 
-    // Log the actual search_path
     try {
         const showPathResult = await client.query("SHOW search_path;");
         console.log('GET /api/graph: Current search_path from SHOW search_path:', showPathResult.rows[0].search_path);
@@ -286,7 +416,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
         console.error('GET /api/graph: Error executing SHOW search_path:', e);
     }
 
-    // Additional Diagnostics (pg_extension and shared_preload_libraries are still useful)
     try {
         const pgExtensionResult = await client.query("SELECT * FROM pg_extension WHERE extname = 'age';");
         console.log('GET /api/graph: pg_extension query result for "age":', pgExtensionResult.rows);
@@ -310,11 +439,7 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     } catch (e) {
         console.error('GET /api/graph: Error executing SHOW shared_preload_libraries (this might be a permissions issue, which is okay):', e);
     }
-    // End Additional Diagnostics
 
-    // Pre-flight check: Execute a simple Cypher query to ensure cypher() function is accessible
-
-    // Fetch nodes
     const nodesQuery = `
       SELECT ag_catalog.agtype_out(v_data.v) AS ag_vertex_string_out
       FROM cypher($$${graphName}$$, $$
@@ -335,8 +460,8 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
         }
                         
         return {
-          id: String(parsed.id), // Ensure ID is a string for VisNode
-          label: parsed.properties.name || parsed.properties.label || parsed.label || String(parsed.id),
+          id: parsed.id, // parsed.id is now string
+          label: parsed.properties.name || parsed.properties.label || parsed.label || parsed.id,
           title: JSON.stringify(parsed.properties, null, 2),
           group: parsed.label,
           properties: parsed.properties,
@@ -348,7 +473,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     }).filter((node): node is VisNode => node !== null);
     console.log(`GET /api/graph: Processed ${nodes.length} nodes (IDs stringified).`);
 
-    // Fetch edges
     const edgesQuery = `
       SELECT ag_catalog.agtype_out(e_data.e) AS ag_edge_string_out
       FROM cypher($$${graphName}$$, $$
@@ -365,24 +489,25 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
       if (!row.ag_edge_string_out) return null;
       try {
         const parsed = parseAgtypeOutputString(row.ag_edge_string_out);
-        if (!parsed || typeof parsed.start_id !== 'number' || typeof parsed.end_id !== 'number') {
-            console.error("GET /api/graph: Failed to parse edge string or missing start/end IDs:", row.ag_edge_string_out, parsed);
+        // parsed.start_id and parsed.end_id are now strings
+        if (!parsed || typeof parsed.start_id !== 'string' || typeof parsed.end_id !== 'string') {
+            console.error("GET /api/graph: Failed to parse edge string or missing start/end IDs (must be strings):", row.ag_edge_string_out, parsed);
             return null;
         }
         
-        const edgeIdString = String(parsed.id); // Ensure edge ID is a string
+        const edgeIdString = parsed.id; // parsed.id is now string
 
         if (processedEdgeStringIds.has(edgeIdString)) {
-          console.warn(`GET /api/graph: Duplicate edge ID (stringified) "${edgeIdString}" found. Original raw ID from DB: ${parsed.id}. Skipping this edge.`);
+          console.warn(`GET /api/graph: Duplicate edge ID "${edgeIdString}" found. Skipping this edge.`);
           return null; 
         }
         processedEdgeStringIds.add(edgeIdString);
         
         return {
-          id: edgeIdString, // Use the stringified ID for VisEdge
-          from: String(parsed.start_id), // Ensure from ID is a string for VisEdge
-          to: String(parsed.end_id),   // Ensure to ID is a string for VisEdge
-          label: parsed.properties.label || parsed.label, // Prefer property 'label' if exists, else agtype label
+          id: edgeIdString, 
+          from: parsed.start_id, // parsed.start_id is now string
+          to: parsed.end_id,   // parsed.end_id is now string
+          label: parsed.properties.label || parsed.label, 
           title: JSON.stringify(parsed.properties, null, 2),
           properties: parsed.properties,
         };
@@ -393,12 +518,10 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
     }).filter((edge): edge is VisEdge => edge !== null);
     console.log(`GET /api/graph: Processed ${edges.length} edges (after de-duplication using stringified IDs).`);
 
-    // --- SERVER-SIDE DUPLICATE ID VERIFICATION CHECK (POST-DEPLICATION) ---
-    // This check should ideally find no duplicates now as IDs are stringified and de-duplicated.
     const finalNodeIds = new Set<string>();
     const duplicateNodeIdsDetected: string[] = [];
-    for (const node of nodes) { // nodes now have string IDs
-      if (finalNodeIds.has(node.id as string)) { // node.id is already string
+    for (const node of nodes) { 
+      if (finalNodeIds.has(node.id as string)) { 
         duplicateNodeIdsDetected.push(node.id as string);
       }
       finalNodeIds.add(node.id as string);
@@ -411,12 +534,12 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
 
     const finalEdgeIds = new Set<string>();
     const duplicateEdgeIdsDetected: string[] = [];
-    for (const edge of edges) { // edges now have string IDs and are de-duplicated
+    for (const edge of edges) { 
       if (edge.id === undefined) {
         console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
         console.error('SERVER-SIDE VERIFICATION: Found an edge with undefined ID AFTER processing:', edge);
         console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-        continue; // Skip this edge
+        continue; 
       }
       if (finalEdgeIds.has(edge.id as string)) {
         duplicateEdgeIdsDetected.push(edge.id as string);
@@ -428,7 +551,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
       console.error('SERVER-SIDE VERIFICATION: Duplicate EDGE IDs detected AFTER DE-DUP (should not happen):', duplicateEdgeIdsDetected);
       console.error('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
     }
-    // --- END SERVER-SIDE DUPLICATE ID VERIFICATION CHECK ---
 
     res.json({ nodes, edges });
 
@@ -443,7 +565,6 @@ app.get('/api/graph', async (req, res): Promise<void> => { // Explicit Promise<v
   }
 });
 
-// Define interfaces for request parts
 interface CreateNodeBody {
   label: string;
   properties: Record<string, any>;
@@ -457,38 +578,131 @@ interface UpdateNodeBody {
   properties: Record<string, any>;
 }
 
-// Response types for CRUD operations
 type CreateNodeResponse = VisNode | { error: string; details?: string };
 type UpdateNodeResponse = VisNode | { error: string; details?: string };
-type DeleteNodeResponse = { message: string; id: string } | { error: string; details?: string }; // Changed id to string
+type DeleteNodeResponse = { message: string; id: string } | { error: string; details?: string }; 
 
-// --- Edge CRUD --- 
-
-// Request types for Edge CRUD operations
-// UNCOMMENTED AND WILL BE USED
 interface CreateEdgeBody {
-  from: string; // Source node graph ID (stringified internal numeric ID)
-  to: string;   // Target node graph ID (stringified internal numeric ID)
+  from: string; 
+  to: string;   
   label: string;
   properties: Record<string, any>;
 }
 
 interface EdgeParams extends ParamsDictionary {
-  id: string; // Edge graph ID (stringified internal numeric ID)
+  id: string; 
 }
 
 interface UpdateEdgeBody {
   properties: Record<string, any>;
 }
 
-// Response types for Edge CRUD operations
-// UNCOMMENTED AND WILL BE USED
 type CreateEdgeResponse = VisEdge | { error: string; details?: string };
 type UpdateEdgeResponse = VisEdge | { error: string; details?: string };
 type DeleteEdgeResponse = { message: string; id: string } | { error: string; details?: string };
 
+interface RcaRequest {
+  nodeId: string; 
+  nodeData: VisNode; 
+}
 
-// Create Node
+interface RcaResponse {
+  nodeId: string;
+  summary: string;
+  confidence?: number; 
+  error?: string;
+}
+
+// Corrected Express handler type definitions and implementation for /api/rca/:nodeId
+
+interface RcaParams extends ParamsDictionary { // Corrected: No 'core.'
+  nodeId: string;
+}
+
+interface RcaRequestBody {
+  nodeData: VisNode; // This is what the client sends
+}
+
+// Define the new RCA route handler as a constant with explicit types
+const newAnalyzeRootCauseHandler: RequestHandler<RcaParams, any, RcaRequestBody, ParsedQs> = async (req, res): Promise<void> => { // Explicitly set return type to Promise<void>
+  const { nodeId } = req.params;
+  const clientNodeData = req.body.nodeData;
+
+  if (!openai) {
+    res.status(500).json({ error: 'OpenAI client is not initialized.' });
+    return; // Ensure void return
+  }
+  if (!clientNodeData) {
+    res.status(400).json({ error: 'nodeData from client is required in the request body.' });
+    return; // Ensure void return
+  }
+
+  try {
+    const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
+    const neighborhoodContext = await fetchNeighborhood(nodeId, graphName);
+
+    let contextForLlm = `Client-provided data for Selected Node (ID: ${nodeId}):\n${JSON.stringify(clientNodeData, null, 2)}\n\n`;
+
+    if (neighborhoodContext) {
+      contextForLlm += `Neighborhood Context from Database for Node ID ${nodeId}:\n`;
+      contextForLlm += `Selected Node (fresh from DB):\n${JSON.stringify(neighborhoodContext.selectedNode, null, 2)}\n\n`;
+      contextForLlm += `Neighboring Nodes:\n${JSON.stringify(neighborhoodContext.neighborNodes, null, 2)}\n\n`;
+      contextForLlm += `Connecting Edges (Relationships):\n${JSON.stringify(neighborhoodContext.connectingEdges, null, 2)}\n\n`;
+    } else {
+      contextForLlm += `Could not fetch detailed neighborhood context from the database for Node ID ${nodeId}. The analysis will heavily rely on the client-provided data for the selected node.\n\n`;
+    }
+
+    const prompt = `
+You are an expert in Root Cause Analysis for graph-based systems, specifically those using Apache AGE.
+The user has selected a node (ID: ${nodeId}) and wants to understand potential root causes for issues related to it.
+Analyze the following data:
+1.  "Client-provided data for Selected Node": This is the information about the node as known by the client application at the time of selection.
+2.  "Neighborhood Context from Database": This provides fresh data for the selected node itself (queried by ID ${nodeId}), its direct neighbors, and the relationships connecting them, all fetched directly from the graph database. This is the most current state.
+
+Your task is to:
+-   If database context is available, compare the "Client-provided data" with the "Selected Node (fresh from DB)" to identify any discrepancies or stale information on the client.
+-   Examine the properties of the selected node (primarily using the fresh DB data if available).
+-   Examine the properties and types of its neighboring nodes and the relationships.
+-   Identify any anomalies, critical states (e.g., 'status: error', 'health: critical'), suspicious patterns, missing vital relationships, or broken relationships that could indicate a root cause or contributing factors to a problem associated with the selected node ID ${nodeId}.
+-   Provide a concise summary of your findings. Highlight the most probable root cause(s). If multiple causes are possible, list them.
+-   If the database context could not be fetched, base your analysis primarily on the client-provided data, acknowledging this limitation.
+
+${contextForLlm}
+
+Root Cause Analysis Summary for Node ID ${nodeId} (be specific and actionable if possible):
+    `;
+
+    console.log("Sending prompt to OpenAI for RCA...");
+
+    const completion = await openai.chat.completions.create({
+      model: azureOpenAIApiKey ? azureOpenAIApiDeploymentName! : openAIModelName,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 800, 
+    });
+
+    if (completion.choices && completion.choices.length > 0 && completion.choices[0].message && completion.choices[0].message.content) {
+      const rcaSummary = completion.choices[0].message.content;
+      res.json({ summary: rcaSummary });
+      // return; // Not strictly necessary here if res.json() is the last op in this block
+    } else {
+      // throw new Error('No response content from OpenAI or message content is null'); // This would go to the catch block
+      res.status(500).json({ error: 'No response content from OpenAI or message content is null' });
+      return; // Ensure void return
+    }
+  } catch (error: any) {
+    console.error('Error during RCA:', error);
+    if (error instanceof OpenAI.APIError) {
+        res.status(error.status || 500).json({ error: 'Failed to get RCA summary from OpenAI', details: error.message });
+    } else {
+        res.status(500).json({ error: 'Failed to get RCA summary', details: error.message });
+    }
+    // return; // Ensure void return, already handled by res.status().json()
+  }
+};
+
+// Register the new, correctly typed handler, replacing the old app.post for this route
+app.post('/api/rca/:nodeId', newAnalyzeRootCauseHandler); // This replaces the previous app.post('/api/rca/:nodeId', async (req: Request, res: Response) => { ... });
+
 const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, CreateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
   const { label, properties } = req.body;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -554,7 +768,6 @@ const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, Cr
 };
 app.post('/api/node', createNodeHandler);
 
-// Fetch Node by ID
 const getNodeByIdHandler: RequestHandler<NodeParams, VisNode | { error: string; details?: string }, {}, ParsedQs> = async (req, res): Promise<void> => {
   const nodeIdParam = req.params.id; 
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -562,11 +775,11 @@ const getNodeByIdHandler: RequestHandler<NodeParams, VisNode | { error: string; 
 
   console.log(`GET /api/node/${nodeIdParam}: Received request for node ID.`);
 
-  let ageNodeInternalId: bigint; // Use BigInt for precision with id()
+  let ageNodeInternalId: bigint; 
   try {
     const parts = nodeIdParam.split('.');
     const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
-    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
+    ageNodeInternalId = BigInt(idStringToParse); 
     
   } catch (e) {
     console.error(`GET /api/node/${nodeIdParam}: Error parsing node ID to BigInt. Original: '${nodeIdParam}'`, e);
@@ -625,7 +838,6 @@ const getNodeByIdHandler: RequestHandler<NodeParams, VisNode | { error: string; 
 };
 app.get('/api/node/:id', getNodeByIdHandler);
 
-// Update Node
 const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
   const nodeIdParam = req.params.id; 
   const { properties } = req.body;
@@ -643,11 +855,11 @@ const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNo
     return `v.${cypherKey} = ${JSON.stringify(value)}`;
   }).join(', ');
   
-  let ageNodeInternalId: bigint; // Use BigInt
+  let ageNodeInternalId: bigint; 
   try {
     const parts = nodeIdParam.split('.');
     const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
-    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
+    ageNodeInternalId = BigInt(idStringToParse); 
     
   } catch (e) {
     res.status(400).json({ error: `Could not parse node ID to BigInt for Cypher id() function: ${nodeIdParam}` });
@@ -705,17 +917,16 @@ const updateNodeHandler: RequestHandler<NodeParams, UpdateNodeResponse, UpdateNo
 };
 app.put('/api/node/:id', updateNodeHandler);
 
-// Delete Node
 const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, {}, ParsedQs> = async (req, res): Promise<void> => {
   const nodeIdParam = req.params.id; 
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
   let client;
-  let ageNodeInternalId: bigint; // Use BigInt
+  let ageNodeInternalId: bigint; 
 
   try {
     const parts = nodeIdParam.split('.');
     const idStringToParse = parts.length > 1 ? parts[1] : nodeIdParam;
-    ageNodeInternalId = BigInt(idStringToParse); // Parse to BigInt
+    ageNodeInternalId = BigInt(idStringToParse); 
 
   } catch (e) {
     res.status(400).json({ error: `Could not parse node ID to BigInt for Cypher id() function: ${nodeIdParam}` });
@@ -724,7 +935,7 @@ const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, {}, Pars
 
   const deleteCypherString = `
     MATCH (v)
-    WHERE id(v) = ${ageNodeInternalId} // Use BigInt in query
+    WHERE id(v) = ${ageNodeInternalId} 
     DETACH DELETE v
     RETURN '${nodeIdParam}' 
   `;
@@ -747,7 +958,6 @@ const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, {}, Pars
       res.json({ message: 'Node deleted successfully', id: nodeIdParam });
     } else {
       console.warn(`DELETE /api/node/${nodeIdParam}: Node not found or not deleted. Cypher query may not have matched.`);
-      // It's important to send a response back to the client in this case too.
       res.status(404).json({ error: 'Node not found or not deleted.', details: `Node ID ${nodeIdParam} may not exist or was already deleted.` });
     }
   } catch (error) {
@@ -759,9 +969,6 @@ const deleteNodeHandler: RequestHandler<NodeParams, DeleteNodeResponse, {}, Pars
 };
 app.delete('/api/node/:id', deleteNodeHandler);
 
-// --- Edge CRUD Handlers ---
-
-// Create Edge
 const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, CreateEdgeBody, ParsedQs> = async (req, res): Promise<void> => {
   const { from, to, label, properties } = req.body;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -776,7 +983,6 @@ const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, Cr
   let toNodeInternalId: bigint;
 
   try {
-    // Assuming 'from' and 'to' are string representations of the numeric AGE IDs
     fromNodeInternalId = BigInt(from);
     toNodeInternalId = BigInt(to);
   } catch (e) {
@@ -817,7 +1023,7 @@ const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, Cr
       const createdAgEdgeString = result.rows[0].ag_edge_string_out;
       const parsedEdge = parseAgtypeOutputString(createdAgEdgeString);
 
-      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'string' || typeof parsedEdge.end_id !== 'string') {
         console.error('POST /api/edge: Failed to parse created edge string or missing start/end IDs:', createdAgEdgeString, parsedEdge);
         res.status(500).json({ error: 'Failed to parse created edge data from database.' });
         return;
@@ -845,8 +1051,6 @@ const createEdgeHandler: RequestHandler<ParamsDictionary, CreateEdgeResponse, Cr
 };
 app.post('/api/edge', createEdgeHandler);
 
-
-// Fetch Edge by ID
 const getEdgeByIdHandler: RequestHandler<EdgeParams, VisEdge | { error: string; details?: string }, {}, ParsedQs> = async (req, res): Promise<void> => {
   const edgeIdParam = req.params.id;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -856,7 +1060,6 @@ const getEdgeByIdHandler: RequestHandler<EdgeParams, VisEdge | { error: string; 
   console.log(`GET /api/edge/${edgeIdParam}: Received request for edge ID.`);
 
   try {
-    // Assuming edgeIdParam is a string representation of the numeric AGE ID
     ageEdgeInternalId = BigInt(edgeIdParam);
   } catch (e) {
     console.error(`GET /api/edge/${edgeIdParam}: Error parsing edge ID to BigInt. Original: '${edgeIdParam}'`, e);
@@ -887,7 +1090,7 @@ const getEdgeByIdHandler: RequestHandler<EdgeParams, VisEdge | { error: string; 
       const agEdgeString = result.rows[0].ag_edge_string_out;
       const parsedEdge = parseAgtypeOutputString(agEdgeString);
 
-      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'string' || typeof parsedEdge.end_id !== 'string') {
         console.error(`GET /api/edge/${edgeIdParam}: Failed to parse edge string or missing start/end IDs:`, agEdgeString, parsedEdge);
         res.status(500).json({ error: 'Failed to parse edge data from database.' });
         return;
@@ -916,8 +1119,6 @@ const getEdgeByIdHandler: RequestHandler<EdgeParams, VisEdge | { error: string; 
 };
 app.get('/api/edge/:id', getEdgeByIdHandler);
 
-
-// Update Edge
 const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEdgeBody, ParsedQs> = async (req, res): Promise<void> => {
   const edgeIdParam = req.params.id;
   const { properties } = req.body;
@@ -967,7 +1168,7 @@ const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEd
       const updatedAgEdgeString = result.rows[0].ag_edge_string_out;
       const parsedEdge = parseAgtypeOutputString(updatedAgEdgeString);
 
-      if (!parsedEdge || typeof parsedEdge.start_id !== 'number' || typeof parsedEdge.end_id !== 'number') {
+      if (!parsedEdge || typeof parsedEdge.start_id !== 'string' || typeof parsedEdge.end_id !== 'string') {
         console.error(`PUT /api/edge/${edgeIdParam}: Failed to parse updated edge string or missing start/end IDs:`, updatedAgEdgeString, parsedEdge);
         res.status(500).json({ error: 'Failed to parse updated edge data from database.' });
         return;
@@ -995,8 +1196,6 @@ const updateEdgeHandler: RequestHandler<EdgeParams, UpdateEdgeResponse, UpdateEd
 };
 app.put('/api/edge/:id', updateEdgeHandler);
 
-
-// Delete Edge
 const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, ParsedQs> = async (req, res): Promise<void> => {
   const edgeIdParam = req.params.id;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -1010,7 +1209,6 @@ const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, Pars
     return;
   }
 
-  // Return the original edgeIdParam (string) if successful, to match node deletion pattern
   const deleteEdgeCypherString = `
     MATCH ()-[e]->()
     WHERE id(e) = ${ageEdgeInternalId}
@@ -1031,7 +1229,6 @@ const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, Pars
     console.log(`DELETE /api/edge/${edgeIdParam}: Executing SQL: ${finalSql}`);
     const result = await client.query<{ deleted_edge_id: string }>(finalSql);
 
-    // The returned agtype string will be quoted, e.g., "\"12345\""
     if (result.rows.length > 0 && result.rows[0].deleted_edge_id === `"${edgeIdParam}"`) {
       console.log(`DELETE /api/edge/${edgeIdParam}: Edge deleted successfully.`);
       res.json({ message: 'Edge deleted successfully', id: edgeIdParam });
@@ -1048,13 +1245,10 @@ const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, Pars
 };
 app.delete('/api/edge/:id', deleteEdgeHandler);
 
-
-// Search Query Interface for the old /api/search by term
 interface SearchQuery extends ParsedQs {
   term: string;
 }
 
-// Old search endpoint (by general term) - kept for reference or potential future use, but new one is /api/nodes/search
 app.get('/api/search', async (req: express.Request<ParamsDictionary, GraphData | { error: string; details?: string }, {}, SearchQuery>, res: express.Response<GraphData | { error: string; details?: string }>): Promise<void> => {
   const searchTerm = req.query.term;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -1120,13 +1314,11 @@ app.get('/api/search', async (req: express.Request<ParamsDictionary, GraphData |
   }
 });
 
-// Interface for the new /api/nodes/search by property and value
 interface SearchNodesByPropertyQuery extends ParsedQs {
   property: string;
   value: string;
 }
 
-// Search Nodes by Property Value (Case-Insensitive) - New Endpoint: /api/nodes/search
 const searchNodesByPropertyHandler: RequestHandler<ParamsDictionary, GraphData | { error: string; details?: string }, {}, SearchNodesByPropertyQuery> = async (req, res): Promise<void> => {
   const { property, value } = req.query;
   const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
@@ -1198,9 +1390,8 @@ const searchNodesByPropertyHandler: RequestHandler<ParamsDictionary, GraphData |
     if (client) client.release();
   }
 };
-app.get('/api/nodes/search', searchNodesByPropertyHandler); // New route for property-based search
+app.get('/api/nodes/search', searchNodesByPropertyHandler); 
 
-// Start the server
 app.listen(port, () => {
   console.log(`Backend server running at http://localhost:${port}`);
   console.log('Testing database connection and AGE setup...');
