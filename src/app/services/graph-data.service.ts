@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs'; // Removed 'of' as it's not used
+import { Observable, throwError, BehaviorSubject, Subject } from 'rxjs'; // Import Subject
 import { catchError, map } from 'rxjs/operators';
 
 export interface VisNode {
@@ -44,11 +44,38 @@ export interface GraphData {
   edges: VisEdge[];
 }
 
+// Define interfaces for RCA request and response
+export interface RcaRequest {
+  nodeData: VisNode;
+  // We can add more context if needed, e.g., IDs of neighboring nodes
+  // graphContext?: { neighbors?: (string | number)[] }; 
+}
+
+export interface RcaResponse {
+  summary: string;
+  confidence?: number; // Optional: LLM's confidence in the summary
+  error?: string; // Optional: Error message from backend
+  // Optional: any supporting data or sources the LLM used or suggests
+  details?: any; 
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class GraphDataService {
   private apiUrl = 'http://localhost:3000/api';
+
+  // BehaviorSubjects for selected node and edge
+  private selectedNodeSubject = new BehaviorSubject<VisNode | null>(null);
+  private selectedEdgeSubject = new BehaviorSubject<VisEdge | null>(null);
+
+  // Observables for components to subscribe to
+  selectedNode$ = this.selectedNodeSubject.asObservable();
+  selectedEdge$ = this.selectedEdgeSubject.asObservable();
+
+  // Subject for graph refresh
+  private graphRefreshSource = new Subject<void>();
+  graphRefreshNeeded$ = this.graphRefreshSource.asObservable();
 
   constructor(private http: HttpClient) { }
 
@@ -170,5 +197,37 @@ export class GraphDataService {
       }),
       catchError(this.handleError)
     );
+  }
+
+  // New method for RCA
+  getRcaSummary(nodeId: string | number, nodeData: VisNode): Observable<RcaResponse> {
+    const requestPayload: RcaRequest = { nodeData };
+    // The backend endpoint will be POST /api/rca/:nodeId
+    // However, since the nodeId is part of the VisNode in nodeData, 
+    // we might not need it separately in the URL if the backend can extract it from the payload.
+    // For consistency with other specific-item actions, let's keep it in the URL.
+    return this.http.post<RcaResponse>(`${this.apiUrl}/rca/${nodeId}`, requestPayload).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // Methods to update selected node and edge
+  selectNode(node: VisNode | null): void {
+    this.selectedNodeSubject.next(node);
+    if (node) {
+      this.selectedEdgeSubject.next(null); // Clear selected edge if a node is selected
+    }
+  }
+
+  selectEdge(edge: VisEdge | null): void {
+    this.selectedEdgeSubject.next(edge);
+    if (edge) {
+      this.selectedNodeSubject.next(null); // Clear selected node if an edge is selected
+    }
+  }
+
+  // Method to request graph refresh
+  requestGraphRefresh(): void {
+    this.graphRefreshSource.next();
   }
 }

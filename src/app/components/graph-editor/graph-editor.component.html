@@ -40,6 +40,7 @@
     </div>
     <button (click)="updateSelectedNode()">Update Node</button>
     <button (click)="deleteSelectedNode()" class="delete-button">Delete Node</button>
+    <button (click)="analyzeRootCause()" class="rca-button">Analyze Root Cause</button> <!-- New RCA Button -->
   </div>
   <div *ngIf="selectedNodeId === null">
     <p><i>Select a node by its ID or by clicking it in the graph to enable update/delete operations.</i></p>

@@ -1,0 +1,31 @@
+<!-- filepath: c:\\Projects\\GithubLocal\\pg-graph\\src\\app\\components\\rca-dialog\\rca-dialog.component.html -->
+<h2 mat-dialog-title>Root Cause Analysis for Node: {{ data.nodeId }}</h2>
+<mat-dialog-content>
+  <div *ngIf="data.error; else showSummary">
+    <mat-card class="error-card">
+      <mat-card-header>
+        <mat-card-title>Error</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ data.error }}</p>
+      </mat-card-content>
+    </mat-card>
+  </div>
+  <ng-template #showSummary>
+    <mat-card *ngIf="data.summary">
+      <mat-card-header>
+        <mat-card-title>RCA Summary</mat-card-title>
+        <mat-card-subtitle *ngIf="data.confidence !== undefined">
+          Confidence: {{ (data.confidence * 100).toFixed(0) }}%
+        </mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ data.summary }}</p>
+      </mat-card-content>
+    </mat-card>
+    <p *ngIf="!data.summary && !data.error">No summary information available.</p>
+  </ng-template>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button mat-dialog-close>Close</button>
+</mat-dialog-actions>

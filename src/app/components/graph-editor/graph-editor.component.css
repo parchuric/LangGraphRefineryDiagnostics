@@ -49,6 +49,7 @@ button {
   border-radius: 4px;
   cursor: pointer;
   margin-right: 10px;
+  margin-bottom: 5px; /* Added margin to prevent overlap */
   font-size: 14px;
 }
 
