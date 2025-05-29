@@ -123,33 +123,12 @@ The application follows a typical client-server architecture:
     elements.
   * Ensuring data integrity and consistency.
 
-### Architecture Diagram (Mermaid)
+### Architecture Diagram
 
 (The diagram above illustrates the architecture)
 
-```mermaid
-graph TD
-    subgraph ui_subgraph ["User Interface (Angular SPA)"]
-        A[Browser / User] --> B(Angular App Shell - AppComponent)
-        B --> C{"GraphVisualizationComponent (vis-network)"}
-        B --> D{"GraphEditorComponent (Angular Material Forms)"}
-        D --> E{"GraphDataService (HTTP Client)"}
-        C --> E
-        B --> F{RcaDialogComponent}
-        F --> E
-    end
-
-    subgraph backend_subgraph ["Backend (Node.js / Express)"]
-        E --> G{"Express API Gateway (/api)"}
-        G --> H{"Graph Operations Module (AGE Queries)"}
-        H --> I[Apache AGE on Azure PostgreSQL]
-        G --> J{"OpenAI Integration Module"}
-        J --> K[Azure OpenAI Service (gpt-4.1)]
-    end
-
-    style ui_subgraph fill:#f9f,stroke:#333,stroke-width:2px
-    style backend_subgraph fill:#ccf,stroke:#333,stroke-width:2px
-```
+![SulfurGraphExplorer Diagram](src/assets/images/SulfurGraphExplorer.png)
+![Generic Graph Diagram](src/assets/images/graph.png)
 
 ## Application Flow
 
