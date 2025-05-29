@@ -54,7 +54,6 @@ allows users to visualize graph structures, perform Create, Read, Update, and
 Delete (CRUD) operations on nodes and relationships, and search for specific
 graph elements.
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli).
 
 ## Key Features
 
@@ -491,25 +490,32 @@ of their internal numeric AGE IDs, similar to nodes.
 * **Analyze Node for Root Cause:** `POST /api/rca/:nodeId`
   * **URL Parameter:** `:nodeId` - The graph ID of the node to analyze.
   * **Request Body:**
+    * `nodeData`: /* VisNode object for the selected node */
 
     ```json
     {
-      "nodeData": { /* VisNode object for the selected node */ }
+      "nodeData": { }
     }
     ```
 
   * **Response Body:**
+    * `nodeId`: string - ID of the analyzed node
+    * `summary`: string - AI-generated summary/analysis
+    * `confidence`: number - Optional confidence score
+    * Or an error object:
+      * `error`: string
+      * `details`: string - Optional
 
     ```json
     {
-      "nodeId": "string", // ID of the analyzed node
-      "summary": "string", // AI-generated summary/analysis
-      "confidence": "number" // Optional confidence score
+      "nodeId": "string",
+      "summary": "string",
+      "confidence": "number"
     }
     // Or an error object
     {
       "error": "string",
-      "details": "string" // Optional
+      "details": "string"
     }
     ```
 
