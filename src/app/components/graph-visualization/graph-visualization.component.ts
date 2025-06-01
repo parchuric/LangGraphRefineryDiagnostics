@@ -1,13 +1,21 @@
 import { Component, OnInit, AfterViewInit, ElementRef, ViewChild, Inject, PLATFORM_ID, OnDestroy } from '@angular/core'; // Added OnDestroy
 import { isPlatformBrowser } from '@angular/common'; // Import isPlatformBrowser
 import { GraphDataService, GraphData, VisNode, VisEdge } from '../../services/graph-data.service';
-import { Network, DataSet } from 'vis-network/standalone/esm/vis-network.min'; // Import from standalone for better tree-shaking
+import { RcaService } from '../../services/rca.service'; // Import RcaService
+import { RcaDialogComponent, RcaDialogData } from '../rca-dialog/rca-dialog.component'; // Import RcaDialogComponent and RcaDialogData
+import { MatDialog, MatDialogModule } from '@angular/material/dialog'; // Import MatDialog and MatDialogModule
+import { Network, DataSet, IdType } from 'vis-network/standalone/esm/vis-network.min'; // Import from standalone for better tree-shaking, Import IdType
 import { Subscription } from 'rxjs'; // Import Subscription
 
 @Component({
   selector: 'app-graph-visualization',
   templateUrl: './graph-visualization.component.html',
   styleUrls: ['./graph-visualization.component.css'],
+  // Remove standalone: true if it exists, and ensure MatDialogModule is imported in the relevant NgModule or here if truly standalone with individual imports.
+  // For simplicity with recent Angular versions, if this component is intended to be standalone and use other standalone components like MatDialog, ensure imports are correct.
+  // Assuming RcaDialogComponent is standalone, it can be directly used. MatDialogModule might be needed if not already provided globally.
+  imports: [MatDialogModule], // Add MatDialogModule here if graph-visualization is standalone and needs to open dialogs
+  standalone: true, // Keep standalone as true
   host: { // Add this host property
     '[style.display]': "'flex'",
     '[style.flex-direction]': "'column'",
@@ -27,6 +35,7 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
   private viewInitialized = false;
   private dataLoaded = false;
   private graphRefreshSubscription!: Subscription;
+  private nodeClickSubscription!: Subscription; // For handling node clicks from GraphDataService
 
   // Define colors for graph elements and legend
   public nodeColor = '#97C2FC'; // Default vis-network node color
@@ -35,6 +44,8 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
 
   constructor(
     private graphDataService: GraphDataService,
+    private rcaService: RcaService, // Inject RcaService
+    public dialog: MatDialog, // Inject MatDialog
     @Inject(PLATFORM_ID) private platformId: Object // Inject PLATFORM_ID
   ) { }
 
@@ -45,6 +56,20 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
         console.log('GraphVisualizationComponent: graphRefreshNeeded event received. Refreshing graph data.');
         this.fetchAndLoadGraph();
       });
+
+      // Subscribe to node selection changes to trigger RCA dialog
+      /* REMOVED: This subscription was causing the RCA dialog to open immediately on node click.
+         The GraphEditorComponent is responsible for opening the dialog via its button.
+      this.nodeClickSubscription = this.graphDataService.selectedNode$.subscribe(node => {
+        if (node) {
+          // Check if a dialog is already open for this node to prevent multiple popups for the same click
+          // This simple check might need to be more robust depending on interaction complexity
+          if (!this.dialog.getDialogById(String(node.id))) {
+            this.handleNodeClickForRca(node);
+          }
+        }
+      });
+      */
     }
   }
 
@@ -180,7 +205,8 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
       interaction: {
         dragNodes: true,
         dragView: true,
-        zoomView: true
+        zoomView: true,
+        tooltipDelay: 200 // Added tooltip delay
       },
       nodes: {
         shape: 'dot',
@@ -229,14 +255,27 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
     // Event listeners for node and edge clicks
     this.networkInstance.on('click', (params) => {
       if (params.nodes.length > 0) {
-        const nodeId = params.nodes[0];
-        const node = this.graphData.nodes.find(n => n.id === nodeId);
+        const nodeId = params.nodes[0] as IdType; // Cast to IdType
+        const clickedNodeOrNodes = nodes.get(nodeId);
+        let node: VisNode | null = null;
+        if (Array.isArray(clickedNodeOrNodes)) {
+          node = clickedNodeOrNodes.length > 0 ? clickedNodeOrNodes[0] : null;
+        } else {
+          node = clickedNodeOrNodes as VisNode | null;
+        }
+
         if (node) {
-          this.graphDataService.selectNode(node);
+          this.graphDataService.selectNode(node); // This will trigger the subscription in ngOnInit
         }
       } else if (params.edges.length > 0) {
-        const edgeId = params.edges[0];
-        const edge = this.graphData.edges.find(e => e.id === edgeId);
+        const edgeId = params.edges[0] as IdType; // Cast to IdType
+        const clickedEdgeOrEdges = edges.get(edgeId);
+        let edge: VisEdge | null = null;
+        if (Array.isArray(clickedEdgeOrEdges)) {
+          edge = clickedEdgeOrEdges.length > 0 ? clickedEdgeOrEdges[0] : null;
+        } else {
+          edge = clickedEdgeOrEdges as VisEdge | null;
+        }
         if (edge) {
           this.graphDataService.selectEdge(edge);
         }
@@ -250,10 +289,58 @@ export class GraphVisualizationComponent implements OnInit, AfterViewInit, OnDes
     console.log('[loadGraphActual] Network initialized.');
   }
 
+  private handleNodeClickForRca(node: VisNode): void {
+    console.log(`Node clicked: ${node.id}, preparing RCA input.`);
+    // Prepare RcaObservationInput from the clicked node
+    // This is a simplified example; you might need more complex logic
+    // to extract relevant process variables or symptoms from node properties.
+    const rcaInput = {
+      symptom: `Issue observed at node ${node.label || node.id}`,
+      equipmentInvolved: [String(node.id)],
+      // Example: try to find a 'status' or 'alarm' property for detectedFailureModeIds
+      // This is highly dependent on your node data structure
+      detectedFailureModeIds: node.properties?.alarmType ? [node.properties.alarmType] : [],
+      processVariables: node.properties ? 
+        Object.entries(node.properties).map(([key, value]) => ({ name: key, value: String(value), unit: '' })) :
+        []
+    };
+
+    this.rcaService.performRca(rcaInput).subscribe({
+      next: (rcaResult) => {
+        const dialogData: RcaDialogData = {
+          nodeId: String(node.id),
+          rcaResult: rcaResult
+        };
+        this.dialog.open(RcaDialogComponent, {
+          width: '600px',
+          data: dialogData,
+          id: String(node.id) // Use node ID as dialog ID to prevent duplicates
+        });
+      },
+      error: (err) => {
+        console.error('Error performing RCA:', err);
+        const dialogData: RcaDialogData = {
+          nodeId: String(node.id),
+          error: 'Failed to perform Root Cause Analysis. Please check console for details.'
+        };
+        this.dialog.open(RcaDialogComponent, {
+          width: '600px',
+          data: dialogData,
+          id: String(node.id) // Use node ID as dialog ID for error dialog too
+        });
+      }
+    });
+  }
+
   ngOnDestroy(): void {
     if (this.graphRefreshSubscription) {
       this.graphRefreshSubscription.unsubscribe();
     }
+    /* REMOVED: Unsubscribe from the removed node click subscription
+    if (this.nodeClickSubscription) { 
+      this.nodeClickSubscription.unsubscribe();
+    }
+    */
     if (this.networkInstance) {
       this.networkInstance.destroy();
       this.networkInstance = undefined;

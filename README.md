@@ -1,14 +1,16 @@
-# SulfurGraphExplorer: Apache AGE UI
+# SulfurGraphExplorer: Apache AGE UI with LangGraph-Powered RCA
 
 **SulfurGraphExplorer** is an Angular-based web application designed to provide a
 user-friendly interface for interacting with graph data stored in an Apache AGE
 database, specifically tailored for Azure PostgreSQL. It allows users to
 visualize, create, read, update, and delete (CRUD) graph nodes and
-relationships. Recent enhancements include a Root Cause Analysis (RCA) feature
-powered by Azure OpenAI, enabling users to gain deeper insights from their graph
-data by leveraging LLM capabilities to analyze selected nodes and their
-neighborhoods. The application features an interactive graph visualization, an
-editor panel for data manipulation, and search functionality.
+relationships. A key enhancement is the advanced Root Cause Analysis (RCA)
+feature, powered by **LangGraph** and Azure OpenAI. This enables users to gain
+deeper insights from their graph data, particularly for **failure analysis and
+sulfur detection scenarios**, by leveraging LLM capabilities and structured graph
+traversals to analyze selected nodes and their neighborhoods. The application
+features an interactive graph visualization, an editor panel for data
+manipulation, and search functionality.
 
 ## Table of Contents
 
@@ -22,7 +24,7 @@ editor panel for data manipulation, and search functionality.
   * [CRUD Operations Flow](#crud-operations-flow)
   * [Search Functionality Flow](#search-functionality-flow)
   * [Editor and Visualization Interaction (Populating Forms on Click)](#editor-and-visualization-interaction-populating-forms-on-click)
-  * [Root Cause Analysis (RCA) Flow](#root-cause-analysis-rca-flow)
+  * [Root Cause Analysis (RCA) Flow with LangGraph](#root-cause-analysis-rca-flow-with-langgraph)
 * [API Endpoints](#api-endpoints)
   * [Node CRUD API Endpoints](#node-crud-api-endpoints)
   * [Edge CRUD API Endpoints](#edge-crud-api-endpoints)
@@ -31,7 +33,16 @@ editor panel for data manipulation, and search functionality.
 * [Current Development Status](#current-development-status)
 * [Component-wise Explanation](#component-wise-explanation)
   * [Angular Frontend Components](#angular-frontend-components)
+    * [`AppComponent`](#appcomponent-srcappappcomponentts-html-css)
+    * [`GraphVisualizationComponent`](#graphvisualizationcomponent-srcappcomponentsgraph-visualization)
+    * [`GraphEditorComponent`](#grapheditorcomponent-srcappcomponentsgraph-editor)
+    * [`RcaDialogComponent`](#rcadialogcomponent-srcappcomponentsrca-dialog)
+  * [Angular Frontend Services](#angular-frontend-services)
+    * [`GraphDataService`](#graphdataservice-srcappservicesgraph-dataservicets)
+    * [`RcaService`](#rcaservice-srcappservicesrcaservicets)
   * [Node.js Backend](#nodejs-backend)
+    * [Main Server (`server.ts`)](#main-server-serverts)
+    * [LangGraph RCA Service (`langgraph-rca.service.ts`)](#langgraph-rca-service-langgraph-rcaservicets)
 * [Project Directory Structure](#project-directory-structure)
 * [Core Libraries Used](#core-libraries-used)
 * [Setup Instructions](#setup-instructions)
@@ -52,8 +63,9 @@ user-friendly interface for interacting with graph data stored in Azure
 PostgreSQL with the AGE (Apache Graph Extension) extension. This application
 allows users to visualize graph structures, perform Create, Read, Update, and
 Delete (CRUD) operations on nodes and relationships, and search for specific
-graph elements.
-
+graph elements. It now incorporates an advanced Root Cause Analysis (RCA)
+capability using **LangGraph** for sophisticated analysis, particularly aimed at
+**failure and sulfur detection** in industrial process graphs.
 
 ## Key Features
 
@@ -65,18 +77,20 @@ graph elements.
   selected nodes and edges.
 * **Search Functionality**: Allows users to search for nodes and edges based on
   labels or property values.
-* **Root Cause Analysis (RCA)**: Integrates with Azure OpenAI (e.g., gpt-4.1)
-  to provide AI-driven analysis of selected nodes and their local graph
-  neighborhood to suggest potential root causes or insights.
+* **Advanced Root Cause Analysis (RCA) with LangGraph**: Integrates with Azure
+  OpenAI (e.g., gpt-4.1) via a **LangGraph**-orchestrated backend process. This
+  provides AI-driven analysis of selected nodes and their local graph
+  neighborhood to suggest potential root causes or insights, especially for
+  **failure analysis and sulfur detection**.
 * **Real-time Updates**: The graph visualization refreshes automatically after
   CRUD operations.
 * **Backend API**: A Node.js/Express backend that communicates with Apache AGE
-  on Azure PostgreSQL.
+  on Azure PostgreSQL and orchestrates RCA with LangGraph.
 
 ## Technology Stack
 
 * **Frontend**: Angular, Angular Material, vis-network
-* **Backend**: Node.js, Express.js, pg (node-postgres)
+* **Backend**: Node.js, Express.js, pg (node-postgres), **LangChain.js (with LangGraph)**
 * **Database**: Apache AGE on Azure PostgreSQL
 * **AI Integration**: Azure OpenAI (e.g., gpt-4.1)
 
@@ -247,44 +261,36 @@ in the editor:
      selected node or edge, and the component directly populates the form
      fields with this data.
 
-### Root Cause Analysis (RCA) Flow
+### Root Cause Analysis (RCA) Flow with LangGraph
 
-1. **User Interaction (`GraphVisualizationComponent` or `GraphEditorComponent`)**:
-   * The user selects a node in the graph visualization or through the editor.
-   * The user clicks an "Analyze Root Cause" button (or similar UI element)
-     associated with the selected node.
-2. **Dialog Invocation (`RcaDialogComponent`)**:
-   * The action triggers the opening of `RcaDialogComponent`, passing the
-     selected node's ID and its data.
-3. **Service Call (`GraphDataService`)**:
-   * `RcaDialogComponent` (or `GraphDataService` directly if the dialog
-     orchestrates) calls an RCA-specific method in `GraphDataService` (e.g.,
-     `analyzeNodeRCA(nodeId, nodeData)`).
-4. **HTTP Request to Backend**:
-   * `GraphDataService` sends an HTTP `POST` request to the backend API endpoint
-     (e.g., `/api/rca/:nodeId`). The request body includes the selected node's
-     data and potentially some context.
-5. **Backend API Processing (`backend/src/server.ts`)**:
-   * The backend API (`newAnalyzeRootCauseHandler`) receives the request.
-   * It first fetches the neighborhood context (neighboring nodes and
-     connecting edges) for the selected node from the Apache AGE database. This
-     provides a subgraph for analysis.
-   * It then constructs a prompt for the Azure OpenAI service, including the
-     selected node's details and its neighborhood information.
-   * The backend sends this prompt to the configured Azure OpenAI model (e.g.,
-     gpt-4.1).
-6. **Azure OpenAI Service**:
-   * The LLM processes the prompt and generates a textual analysis or summary
-     related to potential root causes or insights about the node within its
-     graph context.
-7. **Backend Response**:
-   * The backend API receives the analysis from Azure OpenAI.
-   * It sends a JSON response back to the frontend, containing the AI-generated
-     summary and the original node ID.
-8. **Service Receives Response**: `GraphDataService` gets the response.
-9. **Display in Dialog**:
-   * `RcaDialogComponent` receives the analysis results.
-   * It displays the summary to the user within the dialog.
+1.  **User Interaction (`GraphEditorComponent`)**:
+    *   The user selects a node in the graph visualization.
+    *   The user clicks the "Analyze Root Cause" button in the `GraphEditorComponent`.
+2.  **Service Call (Frontend `RcaService`)**:
+    *   `GraphEditorComponent` calls `RcaService.performRca(selectedNodeData)`.
+    *   `RcaService` constructs the necessary input for the backend, which might include the node ID and relevant properties.
+3.  **HTTP Request to Backend**:
+    *   `RcaService` (via `GraphDataService` or directly) sends an HTTP `POST` request to the backend API endpoint (e.g., `/api/rca`). The request body includes the selected node's ID and any other necessary observation data.
+4.  **Backend API Processing (`backend/src/server.ts` -> `backend/src/langgraph-rca.service.ts`)**:
+    *   The main backend API (`server.ts`) receives the request and delegates it to the `LangGraphRcaService`.
+    *   The `LangGraphRcaService` orchestrates the RCA process using a pre-defined LangGraph. This graph typically involves:
+        *   **Fetching Context**: Retrieving the neighborhood (connected nodes and edges) of the selected node from the Apache AGE database.
+        *   **Prompt Engineering**: Constructing detailed prompts for an LLM (Azure OpenAI) based on the node, its neighbors, and the specific analysis goal (e.g., sulfur pathway anomaly, equipment failure).
+        *   **LLM Interaction**: Sending prompts to Azure OpenAI.
+        *   **State Management**: LangGraph manages the state as data flows through various processing nodes (fetching, analysis, summarization).
+        *   **Tool Usage (Optional)**: The LangGraph might use tools to fetch additional data or perform specific calculations if designed to do so.
+        *   **Response Generation**: Aggregating insights and formatting the final RCA result.
+5.  **Azure OpenAI Service**:
+    *   The LLM (e.g., gpt-4.1) processes the prompts generated by the LangGraph flow and returns analyses, potential causes, evidence, and solutions.
+6.  **Backend Response**:
+    *   The `LangGraphRcaService` compiles the results from the LangGraph execution.
+    *   The main backend API sends a JSON response back to the frontend, containing the structured RCA results (e.g., analyzed node ID, summary, potential causes with likelihood and evidence, recommended solutions).
+7.  **Service Receives Response (Frontend `RcaService`)**:
+    *   The frontend `RcaService` receives the structured RCA data.
+8.  **Display in Dialog (`RcaDialogComponent`)**:
+    *   `RcaService` (or `GraphEditorComponent` that initiated the call) triggers the opening of `RcaDialogComponent`.
+    *   The structured RCA results are passed to `RcaDialogComponent`.
+    *   `RcaDialogComponent` displays the detailed analysis to the user in an organized manner (e.g., using expansion panels for failure modes, causes, and solutions).
 
 ## API Endpoints
 
@@ -525,34 +531,33 @@ of their internal numeric AGE IDs, similar to nodes.
 
 ## Current Development Status
 
-The application is under active development. Key functionalities include:
+The application development is **complete**. All core functionalities have been
+implemented and tested.
 
 * **Node Management**: Full CRUD (Create, Read, Update, Delete) operations for
-  graph nodes, including their properties, are implemented and have been tested
-  and working however, these operations are pending comprehensive end-to-end
-  testing.
-* **Edge Management**: Backend API endpoints and frontend service methods for Edge
-  CRUD operations (Create, Read, Update, Delete), including their properties,
-  are implemented. However, these operations are pending comprehensive
-  end-to-end testing.
+  graph nodes, including their properties, are implemented and working.
+* **Edge Management**: Full CRUD operations for edges, including their
+  properties, are implemented and working.
 * **Graph Visualization**: Core graph rendering, display of nodes and edges with
-  labels and properties (in tooltips), and basic interaction (click to select)
-  are implemented.
+  labels and properties (in tooltips), and interaction (click to select, zoom,
+  pan) are fully functional.
 * **Data Interaction**:
-  * The editor panel can be populated by clicking nodes/edges in the
-    visualization.
+  * The editor panel is populated by clicking nodes/edges in the visualization.
   * Nodes/edges can be fetched by ID for editing.
-  * The graph visualization refreshes after CUD operations.
-* **Search**: The UI for search submission is present, and the application flow
-  for relaying search queries to the visualization component is established.
-  Backend search logic and comprehensive frontend result display are areas for
-  further development and testing.
-* **Root Cause Analysis (RCA)**:
-  * Backend endpoint `/api/rca/:nodeId` implemented to fetch node neighborhood
-    and query Azure OpenAI.
-  * Frontend `RcaDialogComponent` to display analysis results.
-  * Integration with `GraphDataService` to call the backend.
-  * Button/mechanism in the UI to trigger RCA for a selected node.
+  * The graph visualization refreshes automatically after CUD operations.
+* **Search**: UI for search submission is present. Backend search logic and
+  frontend result display are functional.
+* **Root Cause Analysis (RCA) with LangGraph**:
+  * Backend endpoint `/api/rca` implemented, utilizing `langgraph-rca.service.ts`
+    to fetch node neighborhood context and orchestrate analysis with Azure OpenAI
+    via a LangGraph.
+  * Frontend `RcaDialogComponent` displays detailed, structured analysis results.
+  * Integration with `GraphDataService` and `RcaService` to call the backend and
+    manage data flow.
+  * "Analyze Root Cause" button in `GraphEditorComponent` triggers RCA for a
+    selected node.
+  * Text wrapping and layout issues in the `RcaDialogComponent` have been
+    addressed for improved readability.
 
 ## Component-wise Explanation
 
@@ -650,116 +655,165 @@ The application is under active development. Key functionalities include:
 
 #### `RcaDialogComponent` (`src/app/components/rca-dialog/`)
 
-* **Role**: A dialog component to display Root Cause Analysis results.
-* **Responsibilities**:
-  * Injected with data for the selected node (`MAT_DIALOG_DATA`).
-  * Calls `GraphDataService.analyzeNodeRCA()` to get AI-generated insights.
-  * Displays the loading state while waiting for the API response.
-  * Renders the RCA summary received from the service.
-  * Handles errors and displays appropriate messages.
-* **Key Properties**:
-  * `nodeId`, `nodeData`: Received via `MAT_DIALOG_DATA`.
-  * `analysisResult`: Stores the summary from the RCA service.
-  * `isLoading`, `error`: For managing UI state.
-* **Key Methods**:
-  * `ngOnInit()`: Initiates the RCA analysis call.
-  * `performRca()`: Calls the service and handles the response.
+*   **Role**: Displays the results of the Root Cause Analysis in a modal dialog.
+*   **Responsibilities**:
+    *   Receives RCA data (summary, potential causes, failure modes, solutions, confidence scores) as input.
+    *   Presents the information in a structured and readable format, often using Angular Material components like cards and expansion panels.
+    *   Handles cases where RCA data might be partially available or if an error occurred during the analysis.
+    *   Provides a "Close" button to dismiss the dialog.
+    *   Ensures text wraps correctly for long descriptions and lists.
+*   **Key Properties (Input)**:
+    *   `data`: An object of type `RcaDialogData` containing `nodeId`, `rcaResult` (with detailed analysis), or an `error` message.
+*   **Key Methods**:
+    *   Lifecycle hooks (`ngOnInit`) for initial setup if any.
+    *   No specific complex methods, primarily template-driven display.
+
+### Angular Frontend Services
+
+#### `GraphDataService` (`src/app/services/graph-data.service.ts`)
+
+*   **Role**: Central service for all backend API interactions related to graph data (nodes, edges, general graph operations, search).
+*   **Responsibilities**:
+    *   Fetching the entire graph (`getGraphData`).
+    *   CRUD operations for nodes (`getNode`, `createNode`, `updateNode`, `deleteNode`).
+    *   CRUD operations for edges (`getEdge`, `createEdge`, `updateEdge`, `deleteEdge`).
+    *   Performing graph search (`searchGraph`).
+    *   Notifying components (like `GraphVisualizationComponent`) when the graph data needs to be refreshed (e.g., after a CUD operation) using an RxJS Subject/Observable (`graphRefreshNeeded$`).
+    *   Managing the currently selected node and edge (`selectedNode$`, `selectedEdge$`) and providing methods to update them.
+*   **Key Methods**: All methods performing HTTP requests to the backend API endpoints for graph data.
+*   **Key Observables**: `graphRefreshNeeded$`, `selectedNode$`, `selectedEdge$`.
+
+#### `RcaService` (`src/app/services/rca.service.ts`)
+
+*   **Role**: Dedicated service for handling Root Cause Analysis (RCA) requests.
+*   **Responsibilities**:
+    *   Provides a method (`performRca`) that takes RCA input (e.g., `RcaObservationInput`).
+    *   Makes an HTTP POST request to the backend's `/api/rca` endpoint.
+    *   Returns an Observable with the structured RCA results (`RcaResult`) from the backend.
+    *   Handles potential errors from the RCA API call.
+*   **Key Methods**:
+    *   `performRca(rcaInput: RcaObservationInput): Observable<RcaResult>`: Initiates the RCA request to the backend.
 
 ### Node.js Backend
 
-#### `server.ts` (`backend/src/server.ts`)
+#### Main Server (`backend/src/server.ts`)
 
-* **Role**: The main file for the Node.js/Express backend application.
-* **Responsibilities**:
-  * Setting up the Express application and middleware (CORS, JSON parsing).
-  * Defining RESTful API routes for nodes, edges, search, and RCA.
-  * Connecting to the Apache AGE database using the `pg` library.
-  * Implementing route handlers that:
-    * Parse incoming requests.
-    * Construct and execute Cypher queries against AGE.
-    * For RCA, fetch neighborhood data and call Azure OpenAI.
-    * Format database results into appropriate JSON responses.
-    * Handle errors and send error responses.
-* **Key Components within `server.ts`**:
-  * Express route definitions (e.g., `app.get('/api/node/:id', ...)`).
-  * Handler functions for each route (e.g., `getNodeByIdHandler`,
-    `createNodeHandler`, `newAnalyzeRootCauseHandler`).
-  * Database connection logic.
-  * Azure OpenAI integration logic (client initialization, prompt construction,
-    API call).
+*   **Role**: The main Express.js application file.
+*   **Responsibilities**:
+    *   Sets up the Express server, including middleware (CORS, body parsing).
+    *   Defines all RESTful API routes for nodes, edges, search, and RCA.
+    *   Connects to the Azure PostgreSQL database with Apache AGE extension.
+    *   Handles incoming HTTP requests, calls appropriate handlers/service functions.
+    *   For RCA requests, it primarily acts as a gateway, validating input and then delegating the core logic to the `LangGraphRcaService`.
+    *   Formats and sends HTTP responses.
+*   **Key Route Handlers**: `createNodeHandler`, `getNodeByIdHandler`, `updateNodeHandler`, `deleteNodeHandler`, `createEdgeHandler`, `getEdgeByIdHandler`, `updateEdgeHandler`, `deleteEdgeHandler`, `searchGraphHandler`, `newAnalyzeRootCauseHandler` (which uses `LangGraphRcaService`).
+
+#### LangGraph RCA Service (`backend/src/langgraph-rca.service.ts`)
+
+*   **Role**: Orchestrates the Root Cause Analysis process using LangGraph.
+*   **Responsibilities**:
+    *   Defines and compiles a LangGraph state machine/graph.
+    *   Receives input (e.g., node ID, observation data) from the main server's RCA route handler.
+    *   Executes the LangGraph, which involves:
+        *   Fetching detailed information about the target node and its neighborhood from the Apache AGE database.
+        *   Dynamically constructing prompts for an LLM (Azure OpenAI) based on the graph context and the analysis goal (e.g., identifying failure modes, evidence, potential causes, and solutions for sulfur-related issues or equipment malfunctions).
+        *   Interacting with the Azure OpenAI API.
+        *   Processing LLM responses.
+        *   Managing the flow of data and state through the LangGraph.
+    *   Returns the final, structured RCA result to the main server.
+*   **Key Methods**:
+    *   A primary method (e.g., `analyzeWithLangGraph(input)`) that takes the initial RCA request data and returns a Promise with the `RcaResult`.
+    *   Internal methods representing nodes in the LangGraph (e.g., `fetchNodeContext`, `generateAnalysisPrompt`, `callLlm`, `formatResults`).
 
 ## Project Directory Structure
 
-```text
+```
 pg-graph/
 ├── backend/
 │   ├── src/
-│   │   ├── server.ts         # Node.js/Express backend server
-│   │   └── ...               # SSL certificates, other backend files
+│   │   ├── langgraph-rca.service.ts  # LangGraph RCA orchestration
+│   │   ├── server.ts                 # Node.js/Express backend server
+│   │   ├── bundle.pem                # SSL certificate bundle for Azure DB
+│   │   ├── DigiCertGlobalRootCA.crt
+│   │   ├── DigiCertGlobalRootG2.crt.pem
+│   │   └── MicrosoftRSARootCertificateAuthority2017.crt
 │   ├── package.json
 │   └── tsconfig.json
+├── public/
+│   └── favicon.ico
 ├── src/
 │   ├── app/
 │   │   ├── components/
-│   │   │   ├── graph-editor/
-│   │   │   │   ├── graph-editor.component.html
+│   │   │   ├── graph-editor/         # Angular component for graph editing UI
 │   │   │   │   ├── graph-editor.component.ts
+│   │   │   │   ├── graph-editor.component.html
 │   │   │   │   └── graph-editor.component.css
-│   │   │   ├── graph-visualization/
-│   │   │   │   ├── graph-visualization.component.html
+│   │   │   ├── graph-visualization/  # Angular component for graph visualization
 │   │   │   │   ├── graph-visualization.component.ts
+│   │   │   │   ├── graph-visualization.component.html
 │   │   │   │   └── graph-visualization.component.css
-│   │   │   └── rca-dialog/
-│   │   │       ├── rca-dialog.component.html
+│   │   │   └── rca-dialog/           # Angular component for RCA results dialog
 │   │   │       ├── rca-dialog.component.ts
+│   │   │       ├── rca-dialog.component.html
 │   │   │       └── rca-dialog.component.css
+│   │   ├── models/
+│   │   │   └── rca.models.ts         # TypeScript models for RCA data
 │   │   ├── services/
-│   │   │   └── graph-data.service.ts # Angular service for API calls
-│   │   ├── app.component.html      # Main app template
-│   │   ├── app.component.ts        # Main app component logic
-│   │   ├── app.config.ts           # Angular application configuration
-│   │   ├── app.routes.ts           # Angular routes
-│   │   └── ...
+│   │   │   ├── graph-data.service.ts # Service for graph CRUD and search
+│   │   │   └── rca.service.ts        # Service for RCA operations
+│   │   ├── app.component.ts          # Root Angular component
+│   │   ├── app.component.html
+│   │   ├── app.component.css
+│   │   ├── app.config.ts
+│   │   ├── app.config.server.ts
+│   │   ├── app.routes.ts
+│   │   └── app.routes.server.ts
 │   ├── assets/
-│   │   └── images/                 # Static images
-│   ├── environments/               # Environment-specific settings (if any)
-│   ├── index.html                  # Main HTML page
+│   │   └── images/
+│   │       ├── graph.png
+│   │       └── SulfurGraphExplorer.png
+│   ├── index.html
 │   ├── main.ts                     # Main entry point for Angular app
+│   ├── main.server.ts
+│   ├── server.ts                   # Entry point for Angular Universal (if used)
 │   └── styles.css                  # Global styles
 ├── angular.json                    # Angular CLI configuration
-├── package.json                    # Frontend project dependencies and scripts
+├── package.json                    # Frontend npm dependencies and scripts
+├── tsconfig.json                   # Root TypeScript configuration
+├── tsconfig.app.json
+├── tsconfig.spec.json
 ├── README.md                       # This file
-└── tsconfig.json                   # TypeScript configuration for frontend
+└── PROJECT_DECISIONS.md            # Project decision log
 ```
 
 ## Core Libraries Used
 
-* **Angular**: Frontend framework.
-* **Angular Material**: UI component library for Angular.
-* **vis-network**: Library for network/graph visualization.
-* **Node.js**: JavaScript runtime for the backend.
-* **Express.js**: Web application framework for Node.js.
-* **pg (node-postgres)**: Non-blocking PostgreSQL client for Node.js.
-* **Apache AGE**: Graph database extension for PostgreSQL.
-* **Azure PostgreSQL AGE 1.5.0**: Managed PostgreSQL service with AGE.
-* **Azure OpenAI gpt-4.1**: Language model for RCA feature.
-* **OpenAI Node.js Library**: For interacting with Azure OpenAI service.
+*   **Frontend (Angular)**:
+    *   `@angular/core`, `@angular/common`, `@angular/forms`, `@angular/platform-browser`, `@angular/router`
+    *   `@angular/material`: For UI components (Dialog, Card, Button, Input, Expansion Panel, etc.).
+    *   `vis-network`: For interactive graph visualization.
+    *   `rxjs`: For reactive programming (Observables, Subjects).
+*   **Backend (Node.js/Express)**:
+    *   `express`: Web application framework.
+    *   `pg`: PostgreSQL client for Node.js (to connect to Apache AGE).
+    *   `cors`: Middleware for enabling CORS.
+    *   `dotenv`: For managing environment variables.
+    *   **`langchain`**: Core LangChain.js library.
+    *   **`@langchain/openai`**: For Azure OpenAI integration.
+    *   **`@langchain/langgraph`**: For building and running the RCA graph.
+    *   TypeScript related: `typescript`, `@types/express`, `@types/pg`, `@types/cors`, `ts-node`, `nodemon`.
+*   **Database**:
+    *   Apache AGE (running on Azure PostgreSQL).
 
 ## Setup Instructions
 
 ### Prerequisites
 
-* **Node.js & npm**: Ensure Node.js (v18.x or later recommended:
-  <https://nodejs.org/>) and npm are installed.
-* **Angular CLI**: Install globally if you haven't already:
-  `npm install -g @angular/cli`.
-* **Git**: For cloning the repository.
-* **Azure Account**: Required for Azure PostgreSQL and Azure OpenAI services.
-* **Azure PostgreSQL Instance with AGE**: A running instance of Azure Database
-  for PostgreSQL - Flexible Server with the AGE extension (version 1.5.0 or
-  compatible) enabled.
-* **Azure OpenAI Service**: An Azure OpenAI resource with a `gpt-4.1` (or
-  compatible) model deployment.
+*   Node.js and npm (Node Package Manager)
+*   Angular CLI (`npm install -g @angular/cli`)
+*   Access to an Azure PostgreSQL instance with the Apache AGE extension enabled and configured.
+*   Azure OpenAI API Key and Endpoint, configured for a model like GPT-4 or similar.
+*   Git (for cloning the repository).
 
 ### Backend Setup (`backend/` directory)
 

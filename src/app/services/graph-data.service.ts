@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject, Subject } from 'rxjs'; // Import Subject
 import { catchError, map } from 'rxjs/operators';
+import { RcaResult } from '../models/rca.models'; // Import RcaResult
 
 export interface VisNode {
   id: string | number;
@@ -46,18 +47,13 @@ export interface GraphData {
 
 // Define interfaces for RCA request and response
 export interface RcaRequest {
-  nodeData: VisNode;
-  // We can add more context if needed, e.g., IDs of neighboring nodes
-  // graphContext?: { neighbors?: (string | number)[] }; 
+  selectedNode: VisNode; // Renamed from nodeData for clarity
+  adjacentNodes?: VisNode[];
+  connectingEdges?: VisEdge[];
+  // We can add more context if needed
 }
 
-export interface RcaResponse {
-  summary: string;
-  confidence?: number; // Optional: LLM's confidence in the summary
-  error?: string; // Optional: Error message from backend
-  // Optional: any supporting data or sources the LLM used or suggests
-  details?: any; 
-}
+// Remove RcaResponse interface as we now use RcaResult directly from the backend
 
 @Injectable({
   providedIn: 'root'
@@ -80,14 +76,14 @@ export class GraphDataService {
   constructor(private http: HttpClient) { }
 
   private handleError(error: HttpErrorResponse) {
-    if (error.error instanceof ErrorEvent) {
-      console.error('An error occurred:', error.error.message);
-    } else {
-      console.error(
-        `Backend returned code ${error.status}, ` +
-        `body was: ${JSON.stringify(error.error)}`);
-    }
-    return throwError(() => new Error('Something bad happened; please try again later. Check console for details.'));
+    console.error(
+      `Backend returned code ${error.status}, ` +
+      `body was: ${JSON.stringify(error.error)}`);
+    // Return an observable with a user-facing error message AND the error object itself
+    return throwError(() => ({
+      message: 'Something bad happened with RCA; please try again later. Check console for details.',
+      details: error.error // This will carry the RcaResult-like error from the backend
+    }));
   }
 
   getGraphData(): Observable<GraphData> {
@@ -199,14 +195,11 @@ export class GraphDataService {
     );
   }
 
-  // New method for RCA
-  getRcaSummary(nodeId: string | number, nodeData: VisNode): Observable<RcaResponse> {
-    const requestPayload: RcaRequest = { nodeData };
-    // The backend endpoint will be POST /api/rca/:nodeId
-    // However, since the nodeId is part of the VisNode in nodeData, 
-    // we might not need it separately in the URL if the backend can extract it from the payload.
-    // For consistency with other specific-item actions, let's keep it in the URL.
-    return this.http.post<RcaResponse>(`${this.apiUrl}/rca/${nodeId}`, requestPayload).pipe(
+  // Updated method for RCA with richer context
+  getRcaSummary(requestPayload: RcaRequest): Observable<RcaResult> {
+    // The backend endpoint is now POST /api/perform-rca
+    // The entire requestPayload is sent as the body.
+    return this.http.post<RcaResult>(`${this.apiUrl}/perform-rca`, requestPayload).pipe(
       catchError(this.handleError)
     );
   }

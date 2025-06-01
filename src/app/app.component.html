@@ -15,8 +15,8 @@
   <div class="editor-panel">
     <app-graph-editor 
       (graphChanged)="handleGraphChanged()"
-      (searchSubmitted)="handleSearchSubmitted($event)"
-      (rcaRequested)="handleRcaRequested($event)">
+      (searchSubmitted)="handleSearchSubmitted($event)">
+      <!-- (rcaRequested) output binding removed -->
     </app-graph-editor>
   </div>
   <div class="visualization-panel">

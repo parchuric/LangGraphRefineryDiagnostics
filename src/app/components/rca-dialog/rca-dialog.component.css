@@ -1,9 +1,228 @@
 /* filepath: c:\\Projects\\GithubLocal\\pg-graph\\src\\app\\components\\rca-dialog\\rca-dialog.component.css */
 .error-card {
   background-color: #f8d7da; /* Light red for errors */
-  color: #721c24; /* Dark red text */
+  color: #721c24; /* Dark red text for errors */
+  margin-bottom: 1em;
+}
+
+.rca-card {
+  margin-bottom: 1em;
 }
 
 mat-card-subtitle {
   font-style: italic;
+  margin-bottom: 10px; /* Add some space below the subtitle/progress bar */
+}
+
+mat-progress-bar {
+  margin-top: 5px; /* Space between confidence text and progress bar */
+}
+
+.solution-details {
+  font-size: 0.9em;
+  color: #555;
+  padding-left: 16px; /* Indent details slightly */
+}
+
+.cost-detail {
+  margin-left: 10px;
+}
+
+mat-expansion-panel {
+  margin-top: 10px;
+}
+
+mat-list-item strong {
+  font-weight: 500;
+}
+
+/* Ensure dialog content can scroll if it gets too long */
+mat-dialog-content {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.evidence-list {
+  list-style-type: disc; /* Or 'circle', or 'square' if you prefer */
+  padding-left: 20px; /* Indent the evidence list */
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.evidence-list li {
+  display: block; /* Ensure it behaves as a block element */
+  width: 100%; /* Make it take the full available width of its parent */
+  box-sizing: border-box; /* Ensures padding and border don't add to the 100% width */
+  white-space: normal; /* Crucial for allowing text to wrap */
+  word-break: break-word; /* Helps break long words to prevent overflow */
+  overflow-wrap: break-word; /* An alternative/enhancement to word-break for better compatibility */
+  margin-bottom: 4px; /* Space between evidence items */
+  line-height: 1.4; /* Improve readability */
+  padding: 4px; /* Add some padding for better visual separation */
+  border-radius: 3px;
+}
+
+.cause-item {
+  height: auto !important; /* Override default fixed height */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%; /* Ensure the list item itself takes full width */
+  box-sizing: border-box;
+  margin-bottom: 12px; /* Increased space between cause items */
+  padding: 5px 0; /* Add some vertical padding within the cause item */
+  border-bottom: 1px dashed #ccc; /* Separator for cause items */
+}
+
+.cause-item > div:first-child {
+  width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+  font-weight: bold; /* Make the cause factor itself stand out */
+  margin-bottom: 6px; /* Space between factor and its evidence list */
+}
+
+.solution-list {
+  list-style-type: none; /* Remove default list styling if not desired */
+  padding-left: 0; /* Remove default padding if using custom layout */
+}
+
+.solution-list .solution-item { /* Targeting the mat-list-item */
+  height: auto !important; /* Override default fixed height to allow content to determine height */
+  white-space: normal; /* Allow wrapping in the list item itself */
+  overflow-wrap: break-word; /* Ensure long words break within the list item */
+  word-break: break-word; /* Additional rule for word breaking */
+  display: flex; /* Use flex to help manage inner content if needed */
+  align-items: flex-start; /* Align content to the start */
+  margin-bottom: 10px; /* Add some space between solution items */
+}
+
+/* Styles for the div directly containing the solution text */
+.solution-item > div {
+  width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+}
+
+.failure-mode-item {
+  height: auto !important; /* Override Material's default height */
+  white-space: normal; /* Allow text within the item to wrap */
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5; /* For readability of description */
+  padding-top: 8px;
+  padding-bottom: 8px;
+  display: block; /* Ensure it takes block-like behavior for wrapping */
+}
+
+.failure-mode-item strong {
+  margin-right: 5px; /* Space between mode title and description */
+}
+
+.nested-details {
+  padding-left: 20px; /* Indent nested sections */
+  margin-top: 10px;
+  margin-bottom: 15px; /* More space after a nested block */
+  border-left: 2px solid #e0e0e0; /* Visual cue for nesting */
+  position: relative; 
+}
+
+.nested-details > p:first-child { /* Headings like "Potential Causes:", "Recommended Solutions:" */
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #333;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Ensure the main summary also wraps, if it's long */
+.rca-card mat-card-content > p:first-child { /* Assuming the summary is the first paragraph */
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+  margin-bottom: 10px; /* Add some space after the summary */
+}
+
+.solution-item div {
+  display: block; /* Ensure it behaves as a block element */
+  width: 100%; /* Make it take the full available width of its parent */
+  box-sizing: border-box; /* Ensures padding and border don't add to the 100% width */
+  white-space: normal; /* Crucial for allowing text to wrap */
+  word-break: break-word; /* Helps break long words to prevent overflow */
+  overflow-wrap: break-word; /* An alternative/enhancement to word-break for better compatibility */
+  
+  line-height: 1.4; /* Improve readability */
+  margin-bottom: 8px; /* Space between solution items */
+  padding: 8px; /* A bit of padding inside the solution item's box */
+  border: 1px solid #eee; /* Light border */
+  border-radius: 4px; /* Rounded corners */
+  background-color: #f9f9f9; /* Slight background color to distinguish items */
+}
+
+.solution-item div { /* Targeting the div inside mat-list-item */
+  width: 100%; /* Ensure it uses the available width of the list item */
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  box-sizing: border-box; /* Include padding and border in the element's total width */
+
+  /* Crucial for text wrapping */
+  white-space: normal;
+  overflow-wrap: break-word; /* Break long words/strings to prevent overflow */
+  word-break: break-word; /* More aggressive word breaking if needed */
+  line-height: 1.5; /* Slightly more line height for readability */
+}
+
+/* Override Angular Material's mat-list-item defaults that prevent text wrapping */
+::ng-deep .mat-mdc-list-item-unscoped-content {
+  width: 100% !important;
+  display: block !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Override Material's margin for mat-list-item content */
+::ng-deep .mat-mdc-list-item-content {
+  width: 100% !important;
+  display: block !important;
+  padding-right: 16px !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+}
+
+/* Make cause factor text wrap properly */
+.cause-item div {
+  max-width: 100%;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Make solution item text wrap properly */
+.solution-item div {
+  max-width: 100%;
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Ensure the dialog has sufficient width to allow text wrapping properly */
+::ng-deep .mat-mdc-dialog-container {
+  --mdc-dialog-supporting-text-line-height: 1.5;
+}
+
+/* Force list items to resize vertically based on content */
+::ng-deep .mat-mdc-list-item {
+  height: auto !important;
+  min-height: 40px !important;
 }

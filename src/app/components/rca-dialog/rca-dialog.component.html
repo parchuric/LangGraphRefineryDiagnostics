@@ -1,31 +1,84 @@
 <!-- filepath: c:\\Projects\\GithubLocal\\pg-graph\\src\\app\\components\\rca-dialog\\rca-dialog.component.html -->
-<h2 mat-dialog-title>Root Cause Analysis for Node: {{ data.nodeId }}</h2>
-<mat-dialog-content>
-  <div *ngIf="data.error; else showSummary">
-    <mat-card class="error-card">
-      <mat-card-header>
-        <mat-card-title>Error</mat-card-title>
-      </mat-card-header>
-      <mat-card-content>
-        <p>{{ data.error }}</p>
-      </mat-card-content>
-    </mat-card>
-  </div>
-  <ng-template #showSummary>
-    <mat-card *ngIf="data.summary">
-      <mat-card-header>
-        <mat-card-title>RCA Summary</mat-card-title>
-        <mat-card-subtitle *ngIf="data.confidence !== undefined">
-          Confidence: {{ (data.confidence * 100).toFixed(0) }}%
-        </mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <p>{{ data.summary }}</p>
-      </mat-card-content>
-    </mat-card>
-    <p *ngIf="!data.summary && !data.error">No summary information available.</p>
-  </ng-template>
-</mat-dialog-content>
-<mat-dialog-actions align="end">
-  <button mat-button mat-dialog-close>Close</button>
-</mat-dialog-actions>
+<div cdkDrag cdkDragRootElement=".cdk-overlay-pane">
+  <h2 mat-dialog-title cdkDragHandle>Root Cause Analysis for Node: {{ data.nodeId }}</h2>
+  <mat-dialog-content>
+    <div *ngIf="data.error; else showRcaResult">
+      <mat-card class="error-card">
+        <mat-card-header>
+          <mat-card-title>Error</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <p>{{ data.error }}</p>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <ng-template #showRcaResult>
+      <div *ngIf="data.rcaResult; else noData">
+        <mat-card class="rca-card">
+          <mat-card-header>
+            <mat-card-title>RCA Details for {{ data.rcaResult.analyzedNodeId }}</mat-card-title>
+            <mat-card-subtitle *ngIf="data.rcaResult.overallConfidence !== undefined">
+              Confidence: {{ (data.rcaResult.overallConfidence * 100).toFixed(0) }}%
+              <mat-progress-bar mode="determinate" [value]="data.rcaResult.overallConfidence * 100"></mat-progress-bar>
+            </mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <p><strong>Summary:</strong> {{ data.rcaResult.summary || 'No summary provided.' }}</p>
+
+            <mat-accordion>
+              <mat-expansion-panel *ngIf="data.rcaResult.failureModes && data.rcaResult.failureModes.length > 0">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    Potential Failure Modes ({{ data.rcaResult.failureModes.length }})
+                  </mat-panel-title>
+                </mat-expansion-panel-header>
+                <mat-list role="list">
+                  <ng-container *ngFor="let mode of data.rcaResult.failureModes">                    <div class="failure-mode-item">
+                      <p class="mode-description"><strong>{{ mode.mode }}:</strong> {{ mode.description }}</p>
+                    </div>
+                    
+                    <div class="nested-details" *ngIf="mode.potentialCauses && mode.potentialCauses.length > 0">
+                      <p><strong>Potential Causes:</strong></p>
+                      <div class="cause-list">
+                        <div *ngFor="let cause of mode.potentialCauses" class="cause-item">
+                          <div class="cause-text">- {{ cause.factor }} (Likelihood: {{ (cause.likelihood * 100).toFixed(0) }}%)</div>
+                          <ul *ngIf="cause.evidence && cause.evidence.length > 0" class="evidence-list">
+                            <li *ngFor="let ev of cause.evidence">
+                              <strong>Evidence:</strong> {{ ev }}
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>                    <div class="nested-details" *ngIf="mode.recommendedSolutions && mode.recommendedSolutions.length > 0">
+                      <p><strong>Recommended Solutions:</strong></p>
+                      <div class="solution-list">
+                        <div *ngFor="let solution of mode.recommendedSolutions" class="solution-item">
+                          <div class="solution-text">- {{ solution.solution }} (Impact: {{ solution.estimatedImpact }}, Confidence: {{ (solution.confidence * 100).toFixed(0) }}%)</div>
+                        </div>
+                      </div>
+                    </div>
+                    <mat-divider></mat-divider>
+                  </ng-container>
+                </mat-list>
+                <ng-template #noPotentialModes><p>No specific failure modes identified.</p></ng-template>
+              </mat-expansion-panel>
+              <div *ngIf="!(data.rcaResult.failureModes && data.rcaResult.failureModes.length > 0)">
+                  <p>No failure modes identified in this analysis.</p>
+              </div>
+            </mat-accordion>
+
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </ng-template>
+
+    <ng-template #noData>
+      <p *ngIf="!data.error">No RCA information available for this node.</p>
+    </ng-template>
+
+  </mat-dialog-content>
+  <mat-dialog-actions align="end">
+    <button mat-button mat-dialog-close>Close</button>
+  </mat-dialog-actions>
+</div>
