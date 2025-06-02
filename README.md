@@ -1,6 +1,6 @@
-# SulfurGraphExplorer: Apache AGE UI with LangGraph-Powered RCA
+# LangGraphRefineryDiagnostics: Apache AGE UI with LangGraph-Powered RCA
 
-**SulfurGraphExplorer** is an Angular-based web application designed to provide a
+**LangGraphRefineryDiagnostics** is an Angular-based web application designed to provide a
 user-friendly interface for interacting with graph data stored in an Apache AGE
 database, specifically tailored for Azure PostgreSQL. It allows users to
 visualize, create, read, update, and delete (CRUD) graph nodes and
@@ -58,7 +58,7 @@ manipulation, and search functionality.
 
 ## High-Level Overview
 
-SulfurGraphExplorer is an Angular-based web application designed to provide a
+LangGraphRefineryDiagnostics is an Angular-based web application designed to provide a
 user-friendly interface for interacting with graph data stored in Azure
 PostgreSQL with the AGE (Apache Graph Extension) extension. This application
 allows users to visualize graph structures, perform Create, Read, Update, and
@@ -140,7 +140,7 @@ The application follows a typical client-server architecture:
 
 (The diagram above illustrates the architecture)
 
-![SulfurGraphExplorer Diagram](src/assets/images/SulfurGraphExplorer.png)
+![LangGraphRefineryDiagnostics Diagram](src/assets/images/LangGraphRefineryDiagnostics.png)
 ![Generic Graph Diagram](src/assets/images/graph.png)
 
 ## Application Flow
@@ -771,7 +771,7 @@ pg-graph/
 │   ├── assets/
 │   │   └── images/
 │   │       ├── graph.png
-│   │       └── SulfurGraphExplorer.png
+│   │       └── LangGraphRefineryDiagnostics.png
 │   ├── index.html
 │   ├── main.ts                     # Main entry point for Angular app
 │   ├── main.server.ts
