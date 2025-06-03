@@ -1,6 +1,103 @@
+// NEW Interfaces based on the backend's RcaResult structure
+
+export interface FrontendSulfurAssessment {
+  assessment_details: string;
+  mitigation_options: string[];
+}
+
+export interface FrontendProcessEvaluation {
+  evaluation_details: string;
+  optimization_suggestions: string[];
+}
+
+// Define interfaces for the detailed structures
+export interface FrontendContributingFactor {
+  factor_id: string;
+  factor_description: string;
+  likelihood: number | string; // Allow string if LLM might send "Medium" etc.
+  evidence_sources: string[];
+  impact_on_failure_mode: string;
+}
+
+export interface FrontendMitigationStrategy {
+  strategy_id: string;
+  strategy_description: string;
+  effectiveness_score: number | string; // Allow string
+  estimated_cost_category: string;
+  implementation_priority?: string;
+}
+
+export interface FrontendIdentifiedFailureMode {
+  failure_mode_id: string;
+  description: string;
+  likelihood: string;
+  severity: string;
+  contributing_factors: FrontendContributingFactor[]; // Updated
+  mitigation_strategies: FrontendMitigationStrategy[]; // Updated
+}
+
+export interface FrontendRootCauseAnalysis {
+  methodology_description: string;
+  identified_failure_modes: FrontendIdentifiedFailureMode[];
+  underlying_causes: string[];
+}
+
+export interface FrontendImmediateAction {
+  action_id: string;
+  description: string;
+  priority: string;
+  responsible_party: string;
+  timeline: string;
+}
+
+export interface FrontendRecommendation {
+  recommendation_id: string;
+  description: string;
+  expected_impact: string;
+  estimated_cost: string;
+  priority: string;
+}
+
+export interface FrontendPerformancePrediction {
+  scenario_description: string;
+  predicted_outcome: string;
+  confidence_level: string;
+}
+
+export interface FrontendRegulatoryCompliance {
+  compliance_status: string;
+  relevant_regulations: string[];
+  corrective_actions_needed: string[];
+}
+
+export interface FrontendDataConfidence {
+  overall_confidence_score: string;
+  confidence_assessment_details: string;
+  data_gaps: string[];
+}
+
+// Updated RcaResult for the frontend
+export interface RcaResult {
+  analysis_id: string;
+  analyzed_node_id: string;
+  analysis_summary: string;
+  sulfur_assessment: FrontendSulfurAssessment;
+  process_evaluation: FrontendProcessEvaluation;
+  root_cause_analysis: FrontendRootCauseAnalysis;
+  immediate_actions: FrontendImmediateAction[];
+  recommendations: FrontendRecommendation[];
+  performance_predictions: FrontendPerformancePrediction;
+  regulatory_compliance: FrontendRegulatoryCompliance;
+  data_confidence: FrontendDataConfidence;
+}
+
+// --- OLDER INTERFACES (to be reviewed/removed if no longer needed) ---
+// It seems the interfaces below (RcaFactor, RecommendedSolution, FailureMode, etc.)
+// were part of a previous data model. They might need to be deprecated or integrated
+// into the new structure if any concepts are still relevant and not covered.
+
 export interface RcaFactor {
   description: string;
-  // We can add more properties like 'type', 'likelihood', etc., as needed.
 }
 
 export interface RecommendedSolution {
@@ -8,76 +105,61 @@ export interface RecommendedSolution {
   description: string;
   estimatedEffectiveness?: 'High' | 'Medium' | 'Low';
   estimatedCost?: 'Low' | 'Medium' | 'High';
-  // Could link to procedures or further actions.
 }
 
 export interface FailureMode {
-  id: string; // e.g., 'heat-exchanger-fouling'
-  name: string; // e.g., 'Heat Exchanger Tube Fouling'
+  id: string;
+  name: string;
   description: string;
   typicalCauses: RcaFactor[];
   impacts: RcaFactor[];
   detectionMethods: RcaFactor[];
-  potentialSolutions: RecommendedSolution[]; // Solutions specific to this failure mode
+  potentialSolutions: RecommendedSolution[];
 }
 
-// Input for the RCA process
 export interface RcaObservationInput {
-  symptom?: string; // User-described symptom
-  detectedFailureModeIds?: string[]; // If specific failure modes are suspected
-  equipmentInvolved?: string[]; // e.g., ['Heat Exchanger H-101']
-  processVariables?: { name: string; value: any; unit: string }[]; // e.g., [{ name: 'Outlet Temperature', value: 350, unit: 'C' }]
-  // We can add other relevant inputs like timestamps, operational context, etc.
+  symptom?: string;
+  detectedFailureModeIds?: string[];
+  equipmentInvolved?: string[];
+  processVariables?: { name: string; value: any; unit: string }[];
 }
 
-// Corresponds to backend RcaFactor
+// The following Frontend* interfaces were attempts to map to a previous backend model.
+// They should be reviewed against the new RcaResult structure above.
 export interface FrontendRcaFactor {
-  factor: string; // Was description in original frontend model
-  likelihood: number; // 0.0 to 1.0
+  factor: string;
+  likelihood: number;
   evidence: string[];
 }
 
-// Corresponds to backend RecommendedSolution
 export interface FrontendRecommendedSolution {
-  solution: string; // Was description in original frontend model
-  estimatedImpact: string; // Was estimatedEffectiveness in original frontend model
-  confidence: number; // 0.0 to 1.0
-  // id removed
-  // estimatedCost removed (not in backend model but was in original frontend)
+  solution: string;
+  estimatedImpact: string;
+  confidence: number;
 }
 
-// Corresponds to backend FailureMode
 export interface FrontendFailureMode {
-  mode: string; // Was name/id in original frontend model
+  mode: string;
   description: string;
-  potentialCauses: FrontendRcaFactor[]; // Replaces typicalCauses, impacts, detectionMethods
-  recommendedSolutions: FrontendRecommendedSolution[]; // Replaces potentialSolutions
+  potentialCauses: FrontendRcaFactor[];
+  recommendedSolutions: FrontendRecommendedSolution[];
 }
 
-// Corresponds to backend RcaResult and LLM output structure
-export interface RcaResult {
-  analyzedNodeId: string; // New, from backend
-  summary: string; // Was analysisDetails in original frontend model
-  failureModes: FrontendFailureMode[]; // Was potentialFailureModes
-  overallConfidence: number; // Was confidenceScore, now non-optional as per backend
-  timestamp: string; // New, from backend
+// This RcaResult was the previous version, now superseded by the one at the top.
+// export interface RcaResult {
+//   analyzedNodeId: string; 
+//   summary: string; 
+//   failureModes: FrontendFailureMode[]; 
+//   overallConfidence: number; 
+//   timestamp: string; 
+// }
 
-  // Removed fields from original frontend model that are not top-level in backend:
-  // - identifiedRootCauses (now nested in failureModes.potentialCauses)
-  // - contributingFactors (not in backend model)
-  // - recommendedSolutions (now nested in failureModes.recommendedSolutions)
-  // - potentialFailureModes (renamed to failureModes)
-  // - confidenceScore (renamed to overallConfidence)
-  // - analysisDetails (renamed to summary)
-}
-
-// This interface can be used to structure the test scenarios you mentioned
 export interface RcaTestScenario {
   id: string;
   name: string;
   description: string;
   observations: RcaObservationInput;
-  expectedRootCauses?: string[]; // Descriptions or IDs
-  expectedSolutions?: string[]; // Descriptions or IDs
-  expectedFailureModeIds?: string[]; // IDs of failure modes expected to be identified
+  expectedRootCauses?: string[];
+  expectedSolutions?: string[];
+  expectedFailureModeIds?: string[];
 }

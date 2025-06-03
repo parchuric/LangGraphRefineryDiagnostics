@@ -17,55 +17,171 @@
       <div *ngIf="data.rcaResult; else noData">
         <mat-card class="rca-card">
           <mat-card-header>
-            <mat-card-title>RCA Details for {{ data.rcaResult.analyzedNodeId }}</mat-card-title>
-            <mat-card-subtitle *ngIf="data.rcaResult.overallConfidence !== undefined">
-              Confidence: {{ (data.rcaResult.overallConfidence * 100).toFixed(0) }}%
-              <mat-progress-bar mode="determinate" [value]="data.rcaResult.overallConfidence * 100"></mat-progress-bar>
+            <mat-card-title>RCA Details for {{ data.rcaResult.analyzed_node_id }}</mat-card-title>
+            <mat-card-subtitle *ngIf="data.rcaResult.data_confidence && data.rcaResult.data_confidence.overall_confidence_score !== undefined">
+              Confidence: {{ (+data.rcaResult.data_confidence.overall_confidence_score * 100).toFixed(0) }}%
+              <!-- Assuming overall_confidence_score is a string like "0.75", convert to number for progress bar -->
+              <mat-progress-bar mode="determinate" [value]="(+data.rcaResult.data_confidence.overall_confidence_score * 100)"></mat-progress-bar>
             </mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
-            <p><strong>Summary:</strong> {{ data.rcaResult.summary || 'No summary provided.' }}</p>
+            <p><strong>Summary:</strong> {{ data.rcaResult.analysis_summary || 'No summary provided.' }}</p>
 
             <mat-accordion>
-              <mat-expansion-panel *ngIf="data.rcaResult.failureModes && data.rcaResult.failureModes.length > 0">
+              <!-- Display Identified Failure Modes -->
+              <mat-expansion-panel *ngIf="data.rcaResult.root_cause_analysis && data.rcaResult.root_cause_analysis.identified_failure_modes && data.rcaResult.root_cause_analysis.identified_failure_modes.length > 0">
                 <mat-expansion-panel-header>
                   <mat-panel-title>
-                    Potential Failure Modes ({{ data.rcaResult.failureModes.length }})
+                    Identified Failure Modes ({{ data.rcaResult.root_cause_analysis.identified_failure_modes.length }})
                   </mat-panel-title>
                 </mat-expansion-panel-header>
                 <mat-list role="list">
-                  <ng-container *ngFor="let mode of data.rcaResult.failureModes">                    <div class="failure-mode-item">
-                      <p class="mode-description"><strong>{{ mode.mode }}:</strong> {{ mode.description }}</p>
+                  <ng-container *ngFor="let mode of data.rcaResult.root_cause_analysis.identified_failure_modes">
+                    <div class="failure-mode-item">
+                      <p class="mode-description"><strong>{{ mode.failure_mode_id }}:</strong> {{ mode.description }}</p>
+                      <p>Likelihood: {{mode.likelihood}}, Severity: {{mode.severity}}</p>
                     </div>
-                    
-                    <div class="nested-details" *ngIf="mode.potentialCauses && mode.potentialCauses.length > 0">
-                      <p><strong>Potential Causes:</strong></p>
+                    <div class="nested-details" *ngIf="mode.contributing_factors && mode.contributing_factors.length > 0">
+                      <p><strong>Contributing Factors:</strong></p>
                       <div class="cause-list">
-                        <div *ngFor="let cause of mode.potentialCauses" class="cause-item">
-                          <div class="cause-text">- {{ cause.factor }} (Likelihood: {{ (cause.likelihood * 100).toFixed(0) }}%)</div>
-                          <ul *ngIf="cause.evidence && cause.evidence.length > 0" class="evidence-list">
-                            <li *ngFor="let ev of cause.evidence">
-                              <strong>Evidence:</strong> {{ ev }}
-                            </li>
-                          </ul>
+                        <div *ngFor="let factor of mode.contributing_factors" class="cause-item">
+                          <div class="cause-text">- {{ factor.factor_description }} (ID: {{factor.factor_id}}, Likelihood: {{factor.likelihood}})</div>
+                          <div *ngIf="factor.evidence_sources && factor.evidence_sources.length > 0" class="evidence-sources">
+                            Evidence: {{ factor.evidence_sources.join(', ') }}
+                          </div>
+                           <div *ngIf="factor.impact_on_failure_mode" class="impact-note">
+                            Impact: {{ factor.impact_on_failure_mode }}
+                          </div>
                         </div>
                       </div>
-                    </div>                    <div class="nested-details" *ngIf="mode.recommendedSolutions && mode.recommendedSolutions.length > 0">
-                      <p><strong>Recommended Solutions:</strong></p>
+                    </div>
+                    <div class="nested-details" *ngIf="mode.mitigation_strategies && mode.mitigation_strategies.length > 0">
+                      <p><strong>Mitigation Strategies:</strong></p>
                       <div class="solution-list">
-                        <div *ngFor="let solution of mode.recommendedSolutions" class="solution-item">
-                          <div class="solution-text">- {{ solution.solution }} (Impact: {{ solution.estimatedImpact }}, Confidence: {{ (solution.confidence * 100).toFixed(0) }}%)</div>
+                        <div *ngFor="let strategy of mode.mitigation_strategies" class="solution-item">
+                          <div class="solution-text">- {{ strategy.strategy_description }} (ID: {{strategy.strategy_id}}, Effectiveness: {{strategy.effectiveness_score}})</div>
+                           <div *ngIf="strategy.estimated_cost_category" class="cost-note">
+                            Cost: {{ strategy.estimated_cost_category }}
+                          </div>
+                          <div *ngIf="strategy.implementation_priority" class="priority-note">
+                            Priority: {{ strategy.implementation_priority }}
+                          </div>
                         </div>
                       </div>
                     </div>
                     <mat-divider></mat-divider>
                   </ng-container>
                 </mat-list>
-                <ng-template #noPotentialModes><p>No specific failure modes identified.</p></ng-template>
               </mat-expansion-panel>
-              <div *ngIf="!(data.rcaResult.failureModes && data.rcaResult.failureModes.length > 0)">
-                  <p>No failure modes identified in this analysis.</p>
+              <div *ngIf="!(data.rcaResult.root_cause_analysis && data.rcaResult.root_cause_analysis.identified_failure_modes && data.rcaResult.root_cause_analysis.identified_failure_modes.length > 0)">
+                <p>No identified failure modes in this analysis.</p>
               </div>
+
+              <!-- Display Sulfur Assessment -->
+              <mat-expansion-panel *ngIf="data.rcaResult.sulfur_assessment">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Sulfur Assessment</mat-panel-title>
+                </mat-expansion-panel-header>
+                <p><strong>Details:</strong> {{ data.rcaResult.sulfur_assessment.assessment_details }}</p>
+                <div *ngIf="data.rcaResult.sulfur_assessment.mitigation_options && data.rcaResult.sulfur_assessment.mitigation_options.length > 0">
+                  <p><strong>Mitigation Options:</strong></p>
+                  <ul>
+                    <li *ngFor="let option of data.rcaResult.sulfur_assessment.mitigation_options">{{ option }}</li>
+                  </ul>
+                </div>
+              </mat-expansion-panel>
+
+              <!-- Display Process Evaluation -->
+              <mat-expansion-panel *ngIf="data.rcaResult.process_evaluation">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Process Evaluation</mat-panel-title>
+                </mat-expansion-panel-header>
+                <p><strong>Details:</strong> {{ data.rcaResult.process_evaluation.evaluation_details }}</p>
+                <div *ngIf="data.rcaResult.process_evaluation.optimization_suggestions && data.rcaResult.process_evaluation.optimization_suggestions.length > 0">
+                  <p><strong>Optimization Suggestions:</strong></p>
+                  <ul>
+                    <li *ngFor="let suggestion of data.rcaResult.process_evaluation.optimization_suggestions">{{ suggestion }}</li>
+                  </ul>
+                </div>
+              </mat-expansion-panel>
+              
+              <!-- Display Underlying Causes -->
+              <mat-expansion-panel *ngIf="data.rcaResult.root_cause_analysis && data.rcaResult.root_cause_analysis.underlying_causes && data.rcaResult.root_cause_analysis.underlying_causes.length > 0">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Underlying Causes</mat-panel-title>
+                </mat-expansion-panel-header>
+                 <ul>
+                    <li *ngFor="let cause of data.rcaResult.root_cause_analysis.underlying_causes">{{ cause }}</li>
+                  </ul>
+              </mat-expansion-panel>
+
+              <!-- Display Immediate Actions -->
+              <mat-expansion-panel *ngIf="data.rcaResult.immediate_actions && data.rcaResult.immediate_actions.length > 0">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Immediate Actions ({{data.rcaResult.immediate_actions.length}})</mat-panel-title>
+                </mat-expansion-panel-header>
+                <div *ngFor="let action of data.rcaResult.immediate_actions">
+                  <p><strong>{{action.action_id}}:</strong> {{action.description}}</p>
+                  <p>Priority: {{action.priority}}, Responsible: {{action.responsible_party}}, Timeline: {{action.timeline}}</p>
+                </div>
+              </mat-expansion-panel>
+
+              <!-- Display Recommendations -->
+              <mat-expansion-panel *ngIf="data.rcaResult.recommendations && data.rcaResult.recommendations.length > 0">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Recommendations ({{data.rcaResult.recommendations.length}})</mat-panel-title>
+                </mat-expansion-panel-header>
+                <div *ngFor="let rec of data.rcaResult.recommendations">
+                  <p><strong>{{rec.recommendation_id}}:</strong> {{rec.description}}</p>
+                  <p>Impact: {{rec.expected_impact}}, Cost: {{rec.estimated_cost}}, Priority: {{rec.priority}}</p>
+                </div>
+              </mat-expansion-panel>
+
+              <!-- Display Performance Predictions -->
+              <mat-expansion-panel *ngIf="data.rcaResult.performance_predictions">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Performance Predictions</mat-panel-title>
+                </mat-expansion-panel-header>
+                <p><strong>Scenario:</strong> {{ data.rcaResult.performance_predictions.scenario_description }}</p>
+                <p><strong>Predicted Outcome:</strong> {{ data.rcaResult.performance_predictions.predicted_outcome }}</p>
+                <p><strong>Confidence:</strong> {{ data.rcaResult.performance_predictions.confidence_level }}</p>
+              </mat-expansion-panel>
+
+              <!-- Display Regulatory Compliance -->
+              <mat-expansion-panel *ngIf="data.rcaResult.regulatory_compliance">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Regulatory Compliance</mat-panel-title>
+                </mat-expansion-panel-header>
+                <p><strong>Status:</strong> {{ data.rcaResult.regulatory_compliance.compliance_status }}</p>
+                <div *ngIf="data.rcaResult.regulatory_compliance.relevant_regulations && data.rcaResult.regulatory_compliance.relevant_regulations.length > 0">
+                  <p><strong>Relevant Regulations:</strong></p>
+                  <ul>
+                    <li *ngFor="let reg of data.rcaResult.regulatory_compliance.relevant_regulations">{{ reg }}</li>
+                  </ul>
+                </div>
+                <div *ngIf="data.rcaResult.regulatory_compliance.corrective_actions_needed && data.rcaResult.regulatory_compliance.corrective_actions_needed.length > 0">
+                  <p><strong>Corrective Actions Needed:</strong></p>
+                  <ul>
+                    <li *ngFor="let action of data.rcaResult.regulatory_compliance.corrective_actions_needed">{{ action }}</li>
+                  </ul>
+                </div>
+              </mat-expansion-panel>
+
+              <!-- Display Data Confidence -->
+              <mat-expansion-panel *ngIf="data.rcaResult.data_confidence">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Data Confidence</mat-panel-title>
+                </mat-expansion-panel-header>
+                <p><strong>Overall Score:</strong> {{ data.rcaResult.data_confidence.overall_confidence_score }}</p>
+                <p><strong>Assessment Details:</strong> {{ data.rcaResult.data_confidence.confidence_assessment_details }}</p>
+                <div *ngIf="data.rcaResult.data_confidence.data_gaps && data.rcaResult.data_confidence.data_gaps.length > 0">
+                  <p><strong>Data Gaps:</strong></p>
+                  <ul>
+                    <li *ngFor="let gap of data.rcaResult.data_confidence.data_gaps">{{ gap }}</li>
+                  </ul>
+                </div>
+              </mat-expansion-panel>
+
             </mat-accordion>
 
           </mat-card-content>

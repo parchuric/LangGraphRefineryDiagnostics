@@ -5,12 +5,18 @@ import {
   FailureMode, 
   RcaObservationInput, 
   RcaResult, 
-  RecommendedSolution, // Kept for MOCK_FAILURE_MODES type
-  RcaFactor,         // Kept for MOCK_FAILURE_MODES type
   RcaTestScenario,
-  FrontendFailureMode, // Added
-  FrontendRcaFactor,   // Added
-  FrontendRecommendedSolution // Added
+  FrontendIdentifiedFailureMode, // Use this for the new structure
+  FrontendSulfurAssessment,
+  FrontendProcessEvaluation,
+  FrontendRootCauseAnalysis,
+  FrontendImmediateAction,
+  FrontendRecommendation,
+  FrontendPerformancePrediction,
+  FrontendRegulatoryCompliance,
+  FrontendDataConfidence,
+  FrontendContributingFactor, // Added
+  FrontendMitigationStrategy // Added
 } from '../models/rca.models';
 
 // Mock data based on the user provided failure modes
@@ -159,86 +165,161 @@ export class RcaService {
 
   // Mock RCA processing logic
   performRca(input: RcaObservationInput): Observable<RcaResult> {
-    // These arrays now align with FrontendFailureMode, FrontendRcaFactor, FrontendRecommendedSolution
-    let failureModesForRcaResult: FrontendFailureMode[] = []; // Renamed from potentialFailureModes for clarity
+    let identifiedFailureModes: FrontendIdentifiedFailureMode[] = []; 
+    let overallConfidenceNumber = 0.75; 
+    let summaryText = "Based on the provided symptoms and process variables (mocked by rca.service.ts):";
 
-    let overallConfidence = 0.75; // Default confidence, matches RcaResult.overallConfidence
-    let summaryText = "Based on the provided symptoms and process variables:"; // Matches RcaResult.summary
-
-    // Simple mock logic: if specific failure modes are detected, use their data.
     if (input.detectedFailureModeIds && input.detectedFailureModeIds.length > 0) {
       input.detectedFailureModeIds.forEach(id => {
-        const fm = MOCK_FAILURE_MODES.find(m => m.id === id);
+        const fm = MOCK_FAILURE_MODES.find(m => m.id === id); 
         if (fm) {
-          // Transform fm (FailureMode) to FrontendFailureMode
-          const frontendFm: FrontendFailureMode = {
-            mode: fm.name,
+          const newIdentifiedFm: FrontendIdentifiedFailureMode = {
+            failure_mode_id: fm.id,
             description: fm.description,
-            potentialCauses: fm.typicalCauses.map(tc => ({ factor: tc.description, likelihood: 0.7, evidence: ['Symptom reported'] })),
-            recommendedSolutions: fm.potentialSolutions.map(ps => ({ solution: ps.description, estimatedImpact: ps.estimatedEffectiveness || 'Medium', confidence: 0.8 }))
+            likelihood: "Medium (mock)", 
+            severity: "High (mock)",
+            contributing_factors: fm.typicalCauses.map((tc, index) => ({
+              factor_id: `mock-cf-${fm.id}-${index}`,
+              factor_description: tc.description,
+              likelihood: 0.6, // mock value
+              evidence_sources: ["Mock evidence from rca.service.ts"],
+              impact_on_failure_mode: "Mock impact statement."
+            })), 
+            mitigation_strategies: fm.potentialSolutions.map((ps, index) => ({
+              strategy_id: `mock-ms-${fm.id}-${index}`,
+              strategy_description: ps.description,
+              effectiveness_score: 0.75, // mock value
+              estimated_cost_category: ps.estimatedCost || "Medium",
+              implementation_priority: "Medium"
+            }))
           };
-          failureModesForRcaResult.push(frontendFm);
+          identifiedFailureModes.push(newIdentifiedFm);
           summaryText += `\n- Considered ${fm.name}.`;
         }
       });
     }
 
-    // Mock logic for high sulfur content detection
     if (input.symptom?.toLowerCase().includes('sulfur') || input.processVariables?.some(pv => pv.name.toLowerCase().includes('sulfur') && parseFloat(pv.value) > 0.02)) {
         const catalystDeac = MOCK_FAILURE_MODES.find(fm => fm.id === 'catalyst-deactivation');
-        if (catalystDeac && !failureModesForRcaResult.find(ffm => ffm.mode === catalystDeac.name)) {
-            const frontendFm: FrontendFailureMode = {
-              mode: catalystDeac.name,
+        if (catalystDeac && !identifiedFailureModes.find(iffm => iffm.failure_mode_id === catalystDeac.id)) {
+            const sulfurFm: FrontendIdentifiedFailureMode = {
+              failure_mode_id: catalystDeac.id,
               description: catalystDeac.description,
-              potentialCauses: [
-                { factor: 'High sulfur content in feed leading to catalyst poisoning.', likelihood: 0.85, evidence: ['High sulfur detected'] },
-                ...catalystDeac.typicalCauses.map(tc => ({ factor: tc.description, likelihood: 0.6, evidence: ['General knowledge'] }))
+              likelihood: "High (mock)",
+              severity: "Critical (mock)",
+              contributing_factors: [
+                {
+                  factor_id: "mock-cf-sulfur-1",
+                  factor_description: 'High sulfur content in feed leading to catalyst poisoning (mock).',
+                  likelihood: 0.9,
+                  evidence_sources: ["Process variable: High Sulfur"],
+                  impact_on_failure_mode: "Directly poisons catalyst active sites."
+                },
+                ...catalystDeac.typicalCauses.map((tc, index) => ({
+                  factor_id: `mock-cf-${catalystDeac.id}-sulfur-${index}`,
+                  factor_description: tc.description,
+                  likelihood: 0.7,
+                  evidence_sources: ["Domain knowledge (mock)"],
+                  impact_on_failure_mode: "Contributes to overall catalyst degradation environment."
+                }))
               ],
-              recommendedSolutions: catalystDeac.potentialSolutions.map(ps => ({ solution: ps.description, estimatedImpact: ps.estimatedEffectiveness || 'Medium', confidence: 0.75 }))
+              mitigation_strategies: catalystDeac.potentialSolutions.map((ps, index) => ({
+                strategy_id: `mock-ms-${catalystDeac.id}-sulfur-${index}`,
+                strategy_description: ps.description,
+                effectiveness_score: 0.8,
+                estimated_cost_category: ps.estimatedCost || "High",
+                implementation_priority: "High"
+              }))
             };
-            failureModesForRcaResult.push(frontendFm);
+            identifiedFailureModes.push(sulfurFm);
             summaryText += `\n- High sulfur content detected, potentially impacting catalyst.`;
-            overallConfidence = 0.85;
+            overallConfidenceNumber = 0.85;
         }
     }
 
-    // Mock logic for multiple simultaneous failures (example: Heat Exchanger + Compressor)
     if (input.detectedFailureModeIds?.includes('heat-exchanger-fouling') && input.detectedFailureModeIds?.includes('compressor-surge')) {
-        // Add a specific note to summary, actual failure modes already added if IDs were present
         summaryText += `\n- Detected potential interaction between heat exchanger fouling and compressor surge.`;
-        overallConfidence = 0.90;
-        // We could also add a new "Interaction" failure mode if desired
+        overallConfidenceNumber = 0.90;
     }
 
-
-    // Fallback if no specific modes identified but symptoms exist
-    if (failureModesForRcaResult.length === 0 && input.symptom) {
+    if (identifiedFailureModes.length === 0 && input.symptom) {
       summaryText += '\n- General symptom analysis suggests potential operational issues. More specific data needed for precise RCA.';
-      // Add a generic failure mode
-      const genericFm: FrontendFailureMode = {
-        mode: 'Undefined Operational Anomaly',
+      const genericFm: FrontendIdentifiedFailureMode = {
+        failure_mode_id: 'generic-anomaly',
         description: 'Operational issues suspected based on general symptoms.',
-        potentialCauses: [{ factor: 'Undefined operational anomaly based on symptoms.', likelihood: 0.5, evidence: [input.symptom] }],
-        recommendedSolutions: [{ solution: 'Conduct thorough operational review and data gathering.', estimatedImpact: 'Medium', confidence: 0.6 }]
+        likelihood: "Low (mock)",
+        severity: "Medium (mock)",
+        contributing_factors: [{
+          factor_id: "mock-cf-generic-1",
+          factor_description: `Undefined operational anomaly based on symptom: ${input.symptom} (mock)`,
+          likelihood: 0.3,
+          evidence_sources: ["General symptom input (mock)"],
+          impact_on_failure_mode: "General system instability suspected."
+        }],
+        mitigation_strategies: [{
+          strategy_id: "mock-ms-generic-1",
+          strategy_description: 'Conduct thorough operational review and data gathering (mock).',
+          effectiveness_score: 0.5,
+          estimated_cost_category: "Medium",
+          implementation_priority: "Medium"
+        }]
       };
-      failureModesForRcaResult.push(genericFm);
+      identifiedFailureModes.push(genericFm);
     }
 
-    // Ensure unique failure modes by mode name
-    failureModesForRcaResult = [...new Map(failureModesForRcaResult.map(item => [item.mode, item])).values()];
+    identifiedFailureModes = [...new Map(identifiedFailureModes.map(item => [item.failure_mode_id, item])).values()];
 
     const result: RcaResult = {
-      analyzedNodeId: input.equipmentInvolved && input.equipmentInvolved.length > 0 ? input.equipmentInvolved.join(', ') : 'System', // Use equipment or a generic ID
-      summary: summaryText,
-      failureModes: failureModesForRcaResult,
-      overallConfidence: overallConfidence,
-      timestamp: new Date().toISOString()
-      // identifiedRootCauses and recommendedSolutions are now part of each failureMode
-      // confidenceScore renamed to overallConfidence
-      // analysisDetails renamed to summary
+      analysis_id: `mock-${new Date().toISOString()}-${Math.random().toString(36).substring(2, 15)}`,
+      analyzed_node_id: input.equipmentInvolved && input.equipmentInvolved.length > 0 ? input.equipmentInvolved.join(', ') : 'System (mock)',
+      analysis_summary: summaryText,
+      sulfur_assessment: { 
+        assessment_details: "Mocked sulfur assessment details.", 
+        mitigation_options: ["Implement enhanced sulfur scrubbing (mock)."] 
+      },
+      process_evaluation: { 
+        evaluation_details: "Mocked process evaluation details.", 
+        optimization_suggestions: ["Adjust reactor temperature profile (mock)."] 
+      },
+      root_cause_analysis: {
+        methodology_description: "Mocked RCA methodology (from rca.service.ts)",
+        identified_failure_modes: identifiedFailureModes,
+        underlying_causes: identifiedFailureModes.length > 0 ? [
+            "Mocked underlying cause based on identified failure modes."
+        ] : []
+      },
+      immediate_actions: identifiedFailureModes.length > 0 ? [{
+        action_id: "immediate-mock-1",
+        description: "Mocked immediate action: Isolate affected unit.",
+        priority: "High",
+        responsible_party: "Operations",
+        timeline: "End of Shift (mock)" // Added timeline
+      }] : [],
+      recommendations: identifiedFailureModes.length > 0 ? [{
+        recommendation_id: "rec-mock-1",
+        description: "Mocked recommendation: Schedule detailed inspection.",
+        expected_impact: "Reduced risk of failure (mock)", // Added expected_impact
+        estimated_cost: "USD 5000 (mock)",
+        priority: "Medium (mock)" // Changed from priority_level
+      }] : [],
+      performance_predictions: {
+        scenario_description: "Scenario: If no action is taken (mock).",
+        predicted_outcome: "Continued degradation, potential shutdown (mock).",
+        confidence_level: "0.7 (mock)"
+      },
+      regulatory_compliance: {
+        compliance_status: "Review Needed (mock)",
+        relevant_regulations: ["EPA Emission Standard XYZ (mock)"],
+        corrective_actions_needed: ["Verify emission levels post-event (mock)."]
+      },
+      data_confidence: {
+        overall_confidence_score: overallConfidenceNumber.toFixed(2),
+        confidence_assessment_details: "Mocked confidence assessment based on available data (rca.service.ts).",
+        data_gaps: ["Real-time sensor data for component X (mock)."]
+      }
     };
 
-    return of(result).pipe(delay(1500)); // Simulate complex analysis time
+    return of(result).pipe(delay(1500));
   }
 
   // Mock test scenarios based on user requirements

@@ -1510,12 +1510,30 @@ const rootCauseAnalysisHandler: RequestHandler<ParamsDictionary, RcaResult, Serv
 
   if (!rcaRequestBody || !rcaRequestBody.selectedNode) {
     console.error('[Server] rootCauseAnalysisHandler: ServiceRcaRequest object with selectedNode is missing in the request body');
+    // Updated errorPayload to conform to the new RcaResult structure
     const errorPayload: RcaResult = {
-        analyzedNodeId: rcaRequestBody?.selectedNode?.id || 'unknown',
-        summary: 'Request validation failed: ServiceRcaRequest object with selectedNode is required in the request body.',
-        failureModes: [],
-        overallConfidence: 0,
-        timestamp: new Date().toISOString()
+        analysis_id: "validation_error",
+        analyzed_node_id: rcaRequestBody?.selectedNode?.id || 'unknown',
+        analysis_summary: 'Request validation failed: ServiceRcaRequest object with selectedNode is required in the request body.',
+        sulfur_assessment: { assessment_details: "N/A", mitigation_options: [] },
+        process_evaluation: { evaluation_details: "N/A", optimization_suggestions: [] },
+        root_cause_analysis: {
+            methodology_description: "N/A",
+            identified_failure_modes: [{
+                failure_mode_id: "validation_failed",
+                description: "ServiceRcaRequest object with selectedNode is required.",
+                likelihood: "N/A",
+                severity: "N/A",
+                contributing_factors: [],
+                mitigation_strategies: []
+            }],
+            underlying_causes: []
+        },
+        immediate_actions: [],
+        recommendations: [],
+        performance_predictions: { scenario_description: "N/A", predicted_outcome: "N/A", confidence_level: "N/A" },
+        regulatory_compliance: { compliance_status: "N/A", relevant_regulations: [], corrective_actions_needed: [] },
+        data_confidence: { overall_confidence_score: "0.0", confidence_assessment_details: "N/A", data_gaps: [] }
     };
     res.status(400).json(errorPayload);
     return; 
@@ -1525,23 +1543,37 @@ const rootCauseAnalysisHandler: RequestHandler<ParamsDictionary, RcaResult, Serv
 
   try {
     console.log(`[Server] rootCauseAnalysisHandler: Calling runRca for node: ${rcaRequestBody.selectedNode.label}`);
-    const analysisResult: RcaResult = await runRca(rcaRequestBody);
+    // Assuming runRca now correctly returns the new RcaResult structure
+    const analysisResult: RcaResult = await runRca(rcaRequestBody); 
     console.log('[Server] rootCauseAnalysisHandler: Analysis result from runRca:', analysisResult);
     res.json(analysisResult);
   } catch (error) {
     console.error('[Server] rootCauseAnalysisHandler: Error during root cause analysis:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    // Updated errorResponse to conform to the new RcaResult structure
     const errorResponse: RcaResult = {
-      analyzedNodeId: rcaRequestBody.selectedNode.id,
-      summary: `Error during RCA: ${errorMessage}`,
-      failureModes: [{
-        mode: "ExecutionError",
-        description: `Error during root cause analysis: ${errorMessage}`,
-        potentialCauses: [],
-        recommendedSolutions: []
-      }],
-      overallConfidence: 0,
-      timestamp: new Date().toISOString(),
+      analysis_id: "execution_error",
+      analyzed_node_id: rcaRequestBody.selectedNode.id,
+      analysis_summary: `Error during RCA: ${errorMessage}`,
+      sulfur_assessment: { assessment_details: "N/A", mitigation_options: [] },
+      process_evaluation: { evaluation_details: "N/A", optimization_suggestions: [] },
+      root_cause_analysis: {
+        methodology_description: "N/A",
+        identified_failure_modes: [{
+          failure_mode_id: "ExecutionError",
+          description: `Error during root cause analysis: ${errorMessage}`,
+          likelihood: "N/A",
+          severity: "N/A",
+          contributing_factors: [],
+          mitigation_strategies: []
+        }],
+        underlying_causes: []
+      },
+      immediate_actions: [],
+      recommendations: [],
+      performance_predictions: { scenario_description: "N/A", predicted_outcome: "N/A", confidence_level: "N/A" },
+      regulatory_compliance: { compliance_status: "N/A", relevant_regulations: [], corrective_actions_needed: [] },
+      data_confidence: { overall_confidence_score: "0.0", confidence_assessment_details: "N/A", data_gaps: [] }
     };
     res.status(500).json(errorResponse);
   }
