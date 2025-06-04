@@ -1,15 +1,22 @@
+import dotenv from 'dotenv';
+dotenv.config(); // Moved to the very top
+
 console.log('########## EXECUTING backend/src/server.ts ##########');
 import express, { Express, Request, Response, NextFunction, RequestHandler } from 'express'; 
 import { Pool, PoolConfig, PoolClient } from 'pg'; // Added PoolClient
 import cors from 'cors';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai'; 
 import { ParsedQs } from 'qs'; // Ensure qs is imported for ParsedQs
 import { ParamsDictionary } from 'express-serve-static-core'; // Ensure this is imported for ParamsDictionary
+import { runRca, RcaRequest as ServiceRcaRequest, RcaResult } from './langgraph-rca.service'; // Renamed imported RcaRequest to avoid conflict
 
-dotenv.config();
+console.log("[DEBUG] server.ts - After dotenv.config():");
+console.log("[DEBUG] AZURE_OPENAI_API_KEY:", process.env.AZURE_OPENAI_API_KEY ? 'Loaded' : 'NOT LOADED');
+console.log("[DEBUG] AZURE_OPENAI_ENDPOINT:", process.env.AZURE_OPENAI_ENDPOINT ? 'Loaded' : 'NOT LOADED');
+console.log("[DEBUG] AZURE_OPENAI_DEPLOYMENT_NAME:", process.env.AZURE_OPENAI_DEPLOYMENT_NAME ? 'Loaded' : 'NOT LOADED');
+console.log("[DEBUG] OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? 'Loaded' : 'NOT LOADED');
 
 // Initialize OpenAI client
 const azureOpenAIApiKey = process.env.AZURE_OPENAI_API_KEY;
@@ -72,7 +79,7 @@ interface GraphData {
   edges: VisEdge[];
 }
 
-// Added SubgraphContext interface
+// Restoring SubgraphContext as it's used by fetchNeighborhood
 interface SubgraphContext {
   selectedNode: ParsedAgEntity;
   neighborNodes: ParsedAgEntity[];
@@ -123,7 +130,9 @@ const pool = new Pool({
   database: process.env.DB_DATABASE,
   password: process.env.DB_PASSWORD,
   port: parseInt(process.env.DB_PORT || '5432'),
-  ssl: sslOptions, 
+  ssl: sslOptions,
+  keepAlive: true,
+  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
 });
 
 interface ParsedAgEntity {
@@ -386,6 +395,152 @@ async function fetchNeighborhood(nodeIdStr: string, graphName: string): Promise<
 app.use(cors());
 app.use(express.json());
 
+// Comment out old/conflicting RCA route handlers and their registrations
+/*
+// Handler for POST /api/analyze-root-cause
+const analyzeRootCauseWithNodeIdHandler: RequestHandler<ParamsDictionary, any, { nodeId: string }, ParsedQs> = async (req, res, next) => {
+  const { nodeId } = req.body;
+  if (!nodeId) {
+    res.status(400).json({ error: 'nodeId is required in the request body.' });
+    return; 
+  }
+  try {
+    console.log(`[Server] Received request for RCA with nodeId: ${nodeId}`);
+    // const result = await runRca(nodeId); // TS2345: Argument of type 'string' is not assignable to parameter of type 'ServiceRcaRequest'.
+    res.status(501).json({ message: "This RCA endpoint (analyzeRootCauseWithNodeIdHandler) is deprecated." });
+  } catch (error) {
+    console.error('[Server] Error in analyzeRootCauseWithNodeIdHandler:', error);
+    next(error); 
+  }
+};
+
+// Original analyzeRootCauseWithSubgraphContextHandler, now using runRca
+const analyzeRootCauseWithSubgraphContextHandler: RequestHandler<{ nodeId: string }, any, SubgraphContext, ParsedQs> = async (req, res, next) => {
+  const { nodeId } = req.params; 
+  const subgraphContext = req.body; 
+
+  if (!nodeId) {
+    res.status(400).json({ error: 'nodeId is required in URL path.' });
+    return; 
+  }
+  try {
+    console.log(`[Server] Received request for RCA with subgraph context for nodeId: ${nodeId}`);
+    console.log("[Server] Subgraph Context:", subgraphContext);
+    // const result = await runRca(nodeId); // TS2345: Argument of type 'string' is not assignable to parameter of type 'ServiceRcaRequest'.
+    res.status(501).json({ message: "This RCA endpoint (analyzeRootCauseWithSubgraphContextHandler) is deprecated." });
+  } catch (error) {
+    console.error('[Server] Error in analyzeRootCauseWithSubgraphContextHandler:', error);
+    next(error); 
+  }
+};
+
+// Define a type for the expected request body for RCA analysis
+/* interface RcaRequestBody { // This was a local definition, ServiceRcaRequest is now used
+  nodeId?: string;
+} */
+
+/* interface RcaWithSubGraphContextRequestBody { // No longer needed
+    subgraphContext?: SubgraphContext;
+    nodeId?: string; 
+} */
+
+/* interface ExplainQueryRequestBody { // No longer needed
+    query?: string;
+} */
+
+
+// Generic RCA handler - expects nodeId in body
+/* const analyzeRootCauseHandler: RequestHandler<ParamsDictionary, any, RcaRequestBody, ParsedQs> = async (req, res, next) => {
+  console.log("analyzeRootCauseHandler called");
+  try {
+    const { nodeId } = req.body;
+    if (!nodeId) {
+      res.status(400).json({ error: "nodeId is required in the request body." });
+      return;
+    }
+    console.log(`Received request for RCA with nodeId: ${nodeId}`);
+    // const result = await runRca(nodeId); // TS2345
+    res.status(501).json({ message: "This RCA endpoint (analyzeRootCauseHandler) is deprecated." });
+  } catch (error) {
+    console.error("Error in analyzeRootCauseHandler:", error);
+    next(error); 
+  }
+}; */
+
+// Renamed to avoid conflict and ensure correct typing for this specific endpoint
+/* const analyzeRcaWithNodeIdParamHandler: RequestHandler<{ nodeId: string }, any, RcaWithSubGraphContextRequestBody, ParsedQs> = async (req, res, next) => {
+  console.log("analyzeRcaWithNodeIdParamHandler called");
+  try {
+    const nodeIdFromParams = req.params.nodeId;
+    const nodeIdFromBody = req.body.nodeId;
+    const nodeIdFromContext = req.body.subgraphContext?.selectedNode?.id;
+    
+    const effectiveNodeId = nodeIdFromParams || nodeIdFromBody || nodeIdFromContext;
+
+    if (!effectiveNodeId) {
+        res.status(400).json({ error: "nodeId (from path, body, or subgraphContext) is required." });
+        return;
+    }
+    console.log(`Received request for RCA with effective nodeId: ${effectiveNodeId}`);
+    // const result = await runRca(effectiveNodeId); // TS2345
+    res.status(501).json({ message: "This RCA endpoint (analyzeRcaWithNodeIdParamHandler) is deprecated." });
+  } catch (error) {
+    console.error("Error in analyzeRcaWithNodeIdParamHandler:", error);
+    next(error);
+  }
+}; */
+
+// Explain query handler (currently calls runRca with a placeholder)
+/* const explainQueryHandler: RequestHandler<ParamsDictionary, any, ExplainQueryRequestBody, ParsedQs> = async (req, res, next) => {
+  console.log("explainQueryHandler called");
+  try {
+    const query = req.body.query;
+    if (!query) {
+        res.status(400).json({ error: "query is required in the request body." });
+        return;
+    }
+    console.log(`Received request to explain query: ${query}`);
+    // const result = await runRca(query); // TS2345
+    res.status(501).json({ message: "This RCA endpoint (explainQueryHandler) is deprecated." });
+  } catch (error) {
+    console.error("Error in explainQueryHandler:", error);
+    next(error);
+  }
+}; */
+
+// app.post('/api/analyze-root-cause', analyzeRootCauseHandler); // Deprecated
+// app.post('/api/rca/:nodeId', analyzeRcaWithNodeIdParamHandler); // Deprecated by newAnalyzeRootCauseHandler then by perform-rca
+// app.post('/api/explain-query', explainQueryHandler); // Deprecated
+
+
+// Define the new RCA route handler as a constant with explicit types
+/* const newAnalyzeRootCauseHandler: RequestHandler<ParamsDictionary, any, { subgraphContext: SubgraphContext }, ParsedQs> = async (req, res, next) => {
+  console.log('newAnalyzeRootCauseHandler: Received request');
+  const { subgraphContext } = req.body;
+
+  if (!subgraphContext) {
+    console.error('newAnalyzeRootCauseHandler: Subgraph context is missing in the request body');
+    res.status(400).json({ error: 'Subgraph context is required' });
+    return next(); 
+  }
+
+  console.log('newAnalyzeRootCauseHandler: Subgraph Context:', JSON.stringify(subgraphContext, null, 2));
+
+  try {
+    console.log(`newAnalyzeRootCauseHandler: Calling a deprecated version of runRca.`);
+    res.status(501).json({ message: "This RCA endpoint (newAnalyzeRootCauseHandler) is deprecated." });
+    return next(); 
+  } catch (error) {
+    console.error('newAnalyzeRootCauseHandler: Error during root cause analysis:', error);
+    return next(error); 
+  }
+}; */
+
+// app.post('/api/rca/:nodeId', newAnalyzeRootCauseHandler); // This was also deprecated by perform-rca
+
+// */
+// The above block /* ... */ comments out all deprecated RCA handlers and their registrations.
+
 app.get('/', (req, res): Promise<void> => { 
   res.send('Hello from the backend! Database connection test will run on startup.');
   return Promise.resolve(); 
@@ -624,84 +779,34 @@ interface RcaRequestBody {
 }
 
 // Define the new RCA route handler as a constant with explicit types
-const newAnalyzeRootCauseHandler: RequestHandler<RcaParams, any, RcaRequestBody, ParsedQs> = async (req, res): Promise<void> => { // Explicitly set return type to Promise<void>
-  const { nodeId } = req.params;
-  const clientNodeData = req.body.nodeData;
+/* const newAnalyzeRootCauseHandler: RequestHandler<ParamsDictionary, any, { subgraphContext: SubgraphContext }, ParsedQs> = async (req, res, next) => {
+  console.log('newAnalyzeRootCauseHandler: Received request');
+  const { subgraphContext } = req.body;
 
-  if (!openai) {
-    res.status(500).json({ error: 'OpenAI client is not initialized.' });
-    return; // Ensure void return
+  if (!subgraphContext) {
+    console.error('newAnalyzeRootCauseHandler: Subgraph context is missing in the request body');
+    res.status(400).json({ error: 'Subgraph context is required' });
+    return next(); // Call next after sending response
   }
-  if (!clientNodeData) {
-    res.status(400).json({ error: 'nodeData from client is required in the request body.' });
-    return; // Ensure void return
-  }
+
+  console.log('newAnalyzeRootCauseHandler: Subgraph Context:', JSON.stringify(subgraphContext, null, 2));
+
+  const simpleInput = `Analyzing root cause for node: ${subgraphContext.selectedNode.label} (ID: ${subgraphContext.selectedNode.id})`;
 
   try {
-    const graphName = process.env.AGE_GRAPH_NAME || 'sulfurgraph';
-    const neighborhoodContext = await fetchNeighborhood(nodeId, graphName);
-
-    let contextForLlm = `Client-provided data for Selected Node (ID: ${nodeId}):\n${JSON.stringify(clientNodeData, null, 2)}\n\n`;
-
-    if (neighborhoodContext) {
-      contextForLlm += `Neighborhood Context from Database for Node ID ${nodeId}:\n`;
-      contextForLlm += `Selected Node (fresh from DB):\n${JSON.stringify(neighborhoodContext.selectedNode, null, 2)}\n\n`;
-      contextForLlm += `Neighboring Nodes:\n${JSON.stringify(neighborhoodContext.neighborNodes, null, 2)}\n\n`;
-      contextForLlm += `Connecting Edges (Relationships):\n${JSON.stringify(neighborhoodContext.connectingEdges, null, 2)}\n\n`;
-    } else {
-      contextForLlm += `Could not fetch detailed neighborhood context from the database for Node ID ${nodeId}. The analysis will heavily rely on the client-provided data for the selected node.\n\n`;
-    }
-
-    const prompt = `
-You are an expert in Root Cause Analysis for graph-based systems, specifically those using Apache AGE.
-The user has selected a node (ID: ${nodeId}) and wants to understand potential root causes for issues related to it.
-Analyze the following data:
-1.  "Client-provided data for Selected Node": This is the information about the node as known by the client application at the time of selection.
-2.  "Neighborhood Context from Database": This provides fresh data for the selected node itself (queried by ID ${nodeId}), its direct neighbors, and the relationships connecting them, all fetched directly from the graph database. This is the most current state.
-
-Your task is to:
--   If database context is available, compare the "Client-provided data" with the "Selected Node (fresh from DB)" to identify any discrepancies or stale information on the client.
--   Examine the properties of the selected node (primarily using the fresh DB data if available).
--   Examine the properties and types of its neighboring nodes and the relationships.
--   Identify any anomalies, critical states (e.g., 'status: error', 'health: critical'), suspicious patterns, missing vital relationships, or broken relationships that could indicate a root cause or contributing factors to a problem associated with the selected node ID ${nodeId}.
--   Provide a concise summary of your findings. Highlight the most probable root cause(s). If multiple causes are possible, list them.
--   If the database context could not be fetched, base your analysis primarily on the client-provided data, acknowledging this limitation.
-
-${contextForLlm}
-
-Root Cause Analysis Summary for Node ID ${nodeId} (be specific and actionable if possible):
-    `;
-
-    console.log("Sending prompt to OpenAI for RCA...");
-
-    const completion = await openai.chat.completions.create({
-      model: azureOpenAIApiKey ? azureOpenAIApiDeploymentName! : openAIModelName,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 800, 
-    });
-
-    if (completion.choices && completion.choices.length > 0 && completion.choices[0].message && completion.choices[0].message.content) {
-      const rcaSummary = completion.choices[0].message.content;
-      res.json({ summary: rcaSummary });
-      // return; // Not strictly necessary here if res.json() is the last op in this block
-    } else {
-      // throw new Error('No response content from OpenAI or message content is null'); // This would go to the catch block
-      res.status(500).json({ error: 'No response content from OpenAI or message content is null' });
-      return; // Ensure void return
-    }
-  } catch (error: any) {
-    console.error('Error during RCA:', error);
-    if (error instanceof OpenAI.APIError) {
-        res.status(error.status || 500).json({ error: 'Failed to get RCA summary from OpenAI', details: error.message });
-    } else {
-        res.status(500).json({ error: 'Failed to get RCA summary', details: error.message });
-    }
-    // return; // Ensure void return, already handled by res.status().json()
+    console.log(`newAnalyzeRootCauseHandler: Calling runSimpleTestGraph with input: "${simpleInput}"`);
+    const analysisResult = await runRca(simpleInput);
+    console.log('newAnalyzeRootCauseHandler: Analysis result from runSimpleTestGraph:', analysisResult);
+    res.json({ analysis: analysisResult });
+    return next(); // Call next after sending response
+  } catch (error) {
+    console.error('newAnalyzeRootCauseHandler: Error during root cause analysis:', error);
+    return next(error); // Pass error to next
   }
-};
+}; */
 
 // Register the new, correctly typed handler, replacing the old app.post for this route
-app.post('/api/rca/:nodeId', newAnalyzeRootCauseHandler); // This replaces the previous app.post('/api/rca/:nodeId', async (req: Request, res: Response) => { ... });
+// app.post('/api/rca/:nodeId', newAnalyzeRootCauseHandler); // This replaces the previous app.post('/api/rca/:nodeId', async (req: Request, res: Response) => { ... });
 
 const createNodeHandler: RequestHandler<ParamsDictionary, CreateNodeResponse, CreateNodeBody, ParsedQs> = async (req, res): Promise<void> => {
   const { label, properties } = req.body;
@@ -1218,7 +1323,7 @@ const deleteEdgeHandler: RequestHandler<EdgeParams, DeleteEdgeResponse, {}, Pars
 
   const finalSql = `
     SELECT result_data.id_string AS deleted_edge_id 
-    FROM cypher($$${graphName}$$, $$ ${deleteEdgeCypherString.replace(/\\$\\$/g, '$$$$')} $$) AS result_data(id_string agtype);
+    FROM cypher($$${graphName}$$, $$ ${deleteEdgeCypherString.replace(/\$\$/g, '$$$$')} $$) AS result_data(id_string agtype);
   `;
   
   try {
@@ -1397,3 +1502,94 @@ app.listen(port, () => {
   console.log('Testing database connection and AGE setup...');
   testDatabaseConnection();
 });
+
+// Updated RCA handler that expects ServiceRcaRequest in the body
+const rootCauseAnalysisHandler: RequestHandler<ParamsDictionary, RcaResult, ServiceRcaRequest, ParsedQs> = async (req, res, next) => {
+  console.log('[Server] rootCauseAnalysisHandler: Received request');
+  const rcaRequestBody = req.body;
+
+  if (!rcaRequestBody || !rcaRequestBody.selectedNode) {
+    console.error('[Server] rootCauseAnalysisHandler: ServiceRcaRequest object with selectedNode is missing in the request body');
+    // Updated errorPayload to conform to the new RcaResult structure
+    const errorPayload: RcaResult = {
+        analysis_id: "validation_error",
+        analyzed_node_id: rcaRequestBody?.selectedNode?.id || 'unknown',
+        analysis_summary: 'Request validation failed: ServiceRcaRequest object with selectedNode is required in the request body.',
+        sulfur_assessment: { assessment_details: "N/A", mitigation_options: [] },
+        process_evaluation: { evaluation_details: "N/A", optimization_suggestions: [] },
+        root_cause_analysis: {
+            methodology_description: "N/A",
+            identified_failure_modes: [{
+                failure_mode_id: "validation_failed",
+                description: "ServiceRcaRequest object with selectedNode is required.",
+                likelihood: "N/A",
+                severity: "N/A",
+                contributing_factors: [],
+                mitigation_strategies: []
+            }],
+            underlying_causes: []
+        },
+        immediate_actions: [],
+        recommendations: [],
+        performance_predictions: { scenario_description: "N/A", predicted_outcome: "N/A", confidence_level: "N/A" },
+        regulatory_compliance: { compliance_status: "N/A", relevant_regulations: [], corrective_actions_needed: [] },
+        data_confidence: { overall_confidence_score: "0.0", confidence_assessment_details: "N/A", data_gaps: [] }
+    };
+    res.status(400).json(errorPayload);
+    return; 
+  }
+
+  console.log('[Server] rootCauseAnalysisHandler: ServiceRcaRequest Body:', JSON.stringify(rcaRequestBody, null, 2));
+
+  try {
+    console.log(`[Server] rootCauseAnalysisHandler: Calling runRca for node: ${rcaRequestBody.selectedNode.label}`);
+    // Assuming runRca now correctly returns the new RcaResult structure
+    const analysisResult: RcaResult = await runRca(rcaRequestBody); 
+    console.log('[Server] rootCauseAnalysisHandler: Analysis result from runRca:', analysisResult);
+    res.json(analysisResult);
+  } catch (error) {
+    console.error('[Server] rootCauseAnalysisHandler: Error during root cause analysis:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    // Updated errorResponse to conform to the new RcaResult structure
+    const errorResponse: RcaResult = {
+      analysis_id: "execution_error",
+      analyzed_node_id: rcaRequestBody.selectedNode.id,
+      analysis_summary: `Error during RCA: ${errorMessage}`,
+      sulfur_assessment: { assessment_details: "N/A", mitigation_options: [] },
+      process_evaluation: { evaluation_details: "N/A", optimization_suggestions: [] },
+      root_cause_analysis: {
+        methodology_description: "N/A",
+        identified_failure_modes: [{
+          failure_mode_id: "ExecutionError",
+          description: `Error during root cause analysis: ${errorMessage}`,
+          likelihood: "N/A",
+          severity: "N/A",
+          contributing_factors: [],
+          mitigation_strategies: []
+        }],
+        underlying_causes: []
+      },
+      immediate_actions: [],
+      recommendations: [],
+      performance_predictions: { scenario_description: "N/A", predicted_outcome: "N/A", confidence_level: "N/A" },
+      regulatory_compliance: { compliance_status: "N/A", relevant_regulations: [], corrective_actions_needed: [] },
+      data_confidence: { overall_confidence_score: "0.0", confidence_assessment_details: "N/A", data_gaps: [] }
+    };
+    res.status(500).json(errorResponse);
+  }
+};
+
+// Register the new handler.
+app.post('/api/perform-rca', rootCauseAnalysisHandler);
+
+// Comment out or remove the old local RcaRequest interface to resolve conflict
+/*
+interface RcaRequest { // This was conflicting
+  nodeId: string; 
+  nodeData: VisNode; 
+}
+*/
+
+// ...existing code...
+app.post('/api/node', createNodeHandler);
+// ...existing code...

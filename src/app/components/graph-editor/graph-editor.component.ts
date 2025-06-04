@@ -1,13 +1,15 @@
 import { Component, EventEmitter, Output, Input, OnChanges, SimpleChanges, OnInit, OnDestroy } from '@angular/core'; // Added OnInit, OnDestroy
-import { GraphDataService, VisNode, VisEdge } from '../../services/graph-data.service'; // Added VisEdge
+import { GraphDataService, VisNode, VisEdge, RcaRequest } from '../../services/graph-data.service'; // Added RcaRequest
 import { FormsModule } from '@angular/forms'; // Import FormsModule
 import { CommonModule } from '@angular/common'; // Import CommonModule
 import { Subscription } from 'rxjs'; // Import Subscription
+import { MatDialog, MatDialogModule } from '@angular/material/dialog'; // Import MatDialog and MatDialogModule
+import { RcaDialogComponent, RcaDialogData } from '../rca-dialog/rca-dialog.component'; // Import RcaDialogComponent and RcaDialogData
 
 @Component({
   selector: 'app-graph-editor',
   standalone: true, // Make it a standalone component
-  imports: [FormsModule, CommonModule], // Import necessary modules
+  imports: [FormsModule, CommonModule, MatDialogModule], // Import necessary modules, add MatDialogModule
   templateUrl: './graph-editor.component.html',
   styleUrls: ['./graph-editor.component.css']
 })
@@ -39,13 +41,17 @@ export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // I
   @Input() selectedNode: VisNode | null = null; // This can be removed if direct binding is no longer needed
   @Input() selectedEdge: VisEdge | null = null; // This can be removed if direct binding is no longer needed
 
-  // New EventEmitter for RCA
-  @Output() rcaRequested = new EventEmitter<{ nodeId: string | number, nodeData: VisNode }>();
+  // Remove @Output() rcaRequested as we will handle dialog opening directly
+  // @Output() rcaRequested = new EventEmitter<{ nodeId: string | number, nodeData: VisNode }>();
 
   private nodeSubscription!: Subscription;
   private edgeSubscription!: Subscription;
 
-  constructor(private graphDataService: GraphDataService) { }
+  // Store all graph data locally to find neighbors
+  private currentGraphData: { nodes: VisNode[], edges: VisEdge[] } = { nodes: [], edges: [] };
+  private graphDataSubscription!: Subscription;
+
+  constructor(private graphDataService: GraphDataService, public dialog: MatDialog) { } // Inject MatDialog
 
   ngOnInit(): void {
     this.nodeSubscription = this.graphDataService.selectedNode$.subscribe(node => {
@@ -85,6 +91,11 @@ export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // I
         this.updateEdgePropertiesString = '{}';
       }
     });
+
+    // Subscribe to graph data to have it available for context building
+    this.graphDataSubscription = this.graphDataService.getGraphData().subscribe(data => {
+      this.currentGraphData = data;
+    });
   }
 
   ngOnDestroy(): void {
@@ -93,6 +104,9 @@ export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // I
     }
     if (this.edgeSubscription) {
       this.edgeSubscription.unsubscribe();
+    }
+    if (this.graphDataSubscription) {
+      this.graphDataSubscription.unsubscribe();
     }
   }
 
@@ -391,16 +405,69 @@ export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // I
   }
 
   analyzeRootCause(): void {
-    if (this.selectedNodeId && this.selectedNode) {
-      console.log('Analyze Root Cause button clicked for node ID:', this.selectedNodeId);
-      // Emit an event with the node ID and the full node data
-      this.rcaRequested.emit({ nodeId: this.selectedNodeId, nodeData: this.selectedNode });
-      // For now, we'll just log. Later, this will call a service.
-      alert(`RCA requested for node: ${this.selectedNode.label} (ID: ${this.selectedNodeId})`);
-    } else {
+    if (!this.selectedNodeId || !this.selectedNode) {
       alert('Please select a node first to analyze its root cause.');
       console.warn('analyzeRootCause called without a selected node.');
+      return;
     }
+
+    console.log('Analyze Root Cause button clicked for node ID:', this.selectedNodeId);
+
+    const mainNode = this.selectedNode;
+    const adjacentNodes: VisNode[] = [];
+    const connectingEdges: VisEdge[] = [];
+
+    // Find connecting edges and adjacent nodes
+    this.currentGraphData.edges.forEach(edge => {
+      if (String(edge.from) === String(mainNode.id)) {
+        connectingEdges.push(edge);
+        const neighbor = this.currentGraphData.nodes.find(n => String(n.id) === String(edge.to));
+        if (neighbor && !adjacentNodes.find(an => String(an.id) === String(neighbor.id))) {
+          adjacentNodes.push(neighbor);
+        }
+      } else if (String(edge.to) === String(mainNode.id)) {
+        connectingEdges.push(edge);
+        const neighbor = this.currentGraphData.nodes.find(n => String(n.id) === String(edge.from));
+        if (neighbor && !adjacentNodes.find(an => String(an.id) === String(neighbor.id))) {
+          adjacentNodes.push(neighbor);
+        }
+      }
+    });
+
+    const rcaRequestPayload: RcaRequest = {
+      selectedNode: mainNode,
+      adjacentNodes: adjacentNodes,
+      connectingEdges: connectingEdges
+    };
+
+    console.log('RCA Request Payload:', rcaRequestPayload);
+
+    // Call the getRcaSummary from GraphDataService which should return RcaResult
+    this.graphDataService.getRcaSummary(rcaRequestPayload).subscribe({
+      next: (rcaResult) => {
+        const dialogData: RcaDialogData = {
+          nodeId: String(mainNode.id),
+          rcaResult: rcaResult
+        };
+        this.dialog.open(RcaDialogComponent, {
+          width: '600px',
+          data: dialogData,
+          id: String(mainNode.id) // Optional: for preventing duplicate dialogs if needed
+        });
+      },
+      error: (err) => {
+        console.error('Error performing RCA:', err);
+        const dialogData: RcaDialogData = {
+          nodeId: String(mainNode.id),
+          error: 'Failed to perform Root Cause Analysis. Please check console for details.'
+        };
+        this.dialog.open(RcaDialogComponent, {
+          width: '600px',
+          data: dialogData,
+          id: String(mainNode.id) // Optional: for preventing duplicate dialogs if needed
+        });
+      }
+    });
   }
 
   onSearch(): void {

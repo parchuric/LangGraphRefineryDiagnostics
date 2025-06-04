@@ -1,0 +1,267 @@
+{
+  "refinery_system": {
+    "crude_distillation_unit": {
+      "components": {
+        "atmospheric_column": {
+          "failure_modes": [
+            "column_flooding",
+            "tray_damage",
+            "reflux_system_failure",
+            "temperature_control_deviation"
+          ],
+          "sulfur_monitoring": {
+            "input_streams": {
+              "crude_oil": {
+                "parameter": "total_sulfur_content",
+                "permissible_limits": {
+                  "min": 0.1,
+                  "max": 3.5,
+                  "unit": "wt%"
+                },
+                "monitoring_frequency": "continuous",
+                "critical_threshold": 4.0
+              }
+            },
+            "output_streams": {
+              "light_naphtha": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 0.001,
+                  "unit": "wt%"
+                }
+              },
+              "kerosene": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 0.25,
+                  "unit": "wt%"
+                }
+              },
+              "diesel": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 0.001,
+                  "unit": "wt%"
+                }
+              }
+            }
+          }
+        },
+        "vacuum_column": {
+          "failure_modes": [
+            "vacuum_system_failure",
+            "coking_in_transfer_lines",
+            "steam_ejector_malfunction"
+          ],
+          "sulfur_monitoring": {
+            "output_streams": {
+              "vacuum_gas_oil": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 2.5,
+                  "unit": "wt%"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hydrotreating_units": {
+      "components": {
+        "naphtha_hydrotreater": {
+          "failure_modes": [
+            "catalyst_deactivation",
+            "reactor_fouling",
+            "hydrogen_starvation",
+            "temperature_runaway"
+          ],
+          "sulfur_monitoring": {
+            "input_streams": {
+              "naphtha_feed": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 1.0,
+                  "unit": "wt%"
+                }
+              }
+            },
+            "output_streams": {
+              "treated_naphtha": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 0.001,
+                  "unit": "wt%"
+                },
+                "compliance_standard": "Euro VI"
+              }
+            }
+          }
+        },
+        "diesel_hydrotreater": {
+          "failure_modes": [
+            "catalyst_poisoning",
+            "pressure_drop_buildup",
+            "heat_exchanger_fouling",
+            "desulfurization_efficiency_loss"
+          ],
+          "sulfur_monitoring": {
+            "input_streams": {
+              "diesel_feed": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 1.5,
+                  "unit": "wt%"
+                }
+              }
+            },
+            "output_streams": {
+              "ultra_low_sulfur_diesel": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 0.001,
+                  "unit": "wt%"
+                },
+                "compliance_standard": "EPA_Tier_3"
+              }
+            }
+          }
+        }
+      }
+    },
+    "fluid_catalytic_cracking": {
+      "components": {
+        "reactor_riser": {
+          "failure_modes": [
+            "catalyst_circulation_loss",
+            "thermal_shock",
+            "erosion_corrosion",
+            "feed_injection_problems"
+          ],
+          "sulfur_monitoring": {
+            "input_streams": {
+              "vgo_feed": {
+                "parameter": "sulfur_content",
+                "permissible_limits": {
+                  "max": 3.0,
+                  "unit": "wt%"
+                }
+              }
+            }
+          }
+        },
+        "regenerator": {
+          "failure_modes": [
+            "catalyst_loss",
+            "temperature_excursion",
+            "air_distribution_problems",
+            "cyclone_damage"
+          ],
+          "sulfur_monitoring": {
+            "emissions": {
+              "so2_emissions": {
+                "parameter": "so2_concentration",
+                "permissible_limits": {
+                  "max": 500,
+                  "unit": "ppm"
+                },
+                "environmental_compliance": "EPA_MACT"
+              }
+            }
+          }
+        }
+      }
+    },
+    "sulfur_recovery_unit": {
+      "components": {
+        "claus_reactor": {
+          "failure_modes": [
+            "catalyst_bed_plugging",
+            "sulfur_condensation_issues",
+            "temperature_control_problems",
+            "feed_gas_composition_upset"
+          ],
+          "sulfur_monitoring": {
+            "input_streams": {
+              "acid_gas": {
+                "parameter": "h2s_content",
+                "permissible_limits": {
+                  "min": 15,
+                  "max": 100,
+                  "unit": "mol%"
+                }
+              }
+            },
+            "output_streams": {
+              "tail_gas": {
+                "parameter": "total_sulfur",
+                "permissible_limits": {
+                  "max": 250,
+                  "unit": "ppm"
+                },
+                "environmental_limit": 150
+              }
+            }
+          }
+        }
+      }
+    },
+    "common_failure_categories": {
+      "mechanical": [
+        "pump_failure",
+        "compressor_failure",
+        "valve_malfunction",
+        "heat_exchanger_tube_leak"
+      ],
+      "process": [
+        "catalyst_deactivation",
+        "fouling",
+        "corrosion",
+        "thermal_stress"
+      ],
+      "instrumentation": [
+        "sensor_drift",
+        "control_valve_sticking",
+        "analyzer_malfunction",
+        "transmitter_failure"
+      ],
+      "environmental": [
+        "sulfur_emission_exceedance",
+        "water_contamination",
+        "soil_contamination",
+        "air_quality_violation"
+      ]
+    },
+    "sulfur_compliance_matrix": {
+      "product_specifications": {
+        "gasoline": {
+          "sulfur_limit": 0.001,
+          "unit": "wt%",
+          "standard": "EPA_Tier_3"
+        },
+        "diesel": {
+          "sulfur_limit": 0.001,
+          "unit": "wt%",
+          "standard": "ULSD"
+        },
+        "jet_fuel": {
+          "sulfur_limit": 0.3,
+          "unit": "wt%",
+          "standard": "ASTM_D1655"
+        }
+      },
+      "environmental_limits": {
+        "so2_emissions": {
+          "limit": 500,
+          "unit": "ppm",
+          "regulation": "EPA_MACT_II"
+        },
+        "h2s_concentration": {
+          "limit": 20,
+          "unit": "ppm",
+          "regulation": "OSHA_PEL"
+        }
+      }
+    }
+  }
+}
