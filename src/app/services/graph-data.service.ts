@@ -4,11 +4,17 @@ import { Observable, throwError, BehaviorSubject, Subject } from 'rxjs'; // Impo
 import { catchError, map } from 'rxjs/operators';
 import { RcaResult } from '../models/rca.models'; // Import RcaResult
 
+// Represents a node in the vis-network graph visualization.
 export interface VisNode {
+  // Unique identifier for the node (string or number).
   id: string | number;
+  // Display label for the node.
   label: string;
+  // Optional properties object containing additional node data.
   properties?: any;
+  // Optional title for tooltips or detailed display.
   title?: string; 
+  // Optional color settings for the node, supporting vis-network color object structure.
   color?: string | { 
     border: string, 
     background: string, 
@@ -21,36 +27,48 @@ export interface VisNode {
       background: string
     }
   }; 
+  // Optional group for node clustering or styling.
   group?: string; 
 }
 
+// Represents an edge (relationship) in the vis-network graph visualization.
 export interface VisEdge {
+  // Unique identifier for the edge (string or number).
   id: string | number; 
+  // Source node ID.
   from: string | number;
+  // Target node ID.
   to: string | number;
+  // Optional label for the edge.
   label?: string;
+  // Optional properties object containing additional edge data.
   properties?: any;
+  // Optional title for tooltips or detailed display.
   title?: string; 
+  // Optional arrow style for the edge.
   arrows?: string; 
+  // Optional color settings for the edge, supporting vis-network color object structure.
   color?: string | { 
     color: string, 
     highlight: string,
     hover?: string    // Added hover property for edge color object
   }; 
+  // Optional dashed line style for the edge.
   dashes?: boolean; // Added dashes property
 }
 
+// Represents the complete graph data structure for visualization, including all nodes and edges.
 export interface GraphData {
   nodes: VisNode[];
   edges: VisEdge[];
 }
 
-// Define interfaces for RCA request and response
+// Defines the structure for an RCA (Root Cause Analysis) request, including the selected node and its context.
 export interface RcaRequest {
-  selectedNode: VisNode; // Renamed from nodeData for clarity
-  adjacentNodes?: VisNode[];
-  connectingEdges?: VisEdge[];
-  // We can add more context if needed
+  selectedNode: VisNode; // The node selected for RCA analysis.
+  adjacentNodes?: VisNode[]; // Optional: nodes adjacent to the selected node.
+  connectingEdges?: VisEdge[]; // Optional: edges connecting the selected and adjacent nodes.
+  // Additional context fields can be added as needed.
 }
 
 // Remove RcaResponse interface as we now use RcaResult directly from the backend
