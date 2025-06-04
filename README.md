@@ -504,32 +504,28 @@ of their internal numeric AGE IDs, similar to nodes.
 
 ### RCA API Endpoint
 
+<!-- Note: overall_confidence_score is a string, e.g., "0.75" for 75% -->
+<!-- Note: error_details will contain an RcaError object if an error occurred during analysis -->
 * `POST /api/rca`
   * **Description:** Performs Root Cause Analysis on a given node using LangGraph and Azure OpenAI, incorporating domain-specific knowledge. The analysis results in a detailed, structured JSON output.
   * **Request Body:** JSON object containing information about the node to be analyzed. Example:
     ```json
     {
-      "node_id": "string",
-      "node_label": "string",
-      "properties": {},
-      "// Potentially other context like connected_nodes, connecting_edges": "if sent from frontend"
-    }
-    ```
-  * **Response Body (Success 200 OK):** JSON object with detailed RCA results, conforming to the `RcaResult` model. Example:
-    ```json
-    {
       "analysis_id": "unique-analysis-uuid",
       "analyzed_node_id": "node_123",
-      "analysis_summary": "Comprehensive analysis of the specified node...",
+      "analysis_summary": "Analysis of node 123",
       "sulfur_assessment": {
-        "assessment_summary": "Moderate sulfur contamination risk identified.",
-        "potential_sulfur_sources": ["Upstream unit X", "Process Y"],
-        "mitigation_options": ["Install scrubber Z", "Adjust feedstock"],
-        "monitoring_recommendations": ["Increase sensor frequency"]
+        "sulfur_level": 0.05,
+        "sulfur_sources": ["Source A", "Source B"],
+        "sulfur_mitigation_strategies": ["Strategy 1", "Strategy 2"]
       },
-      "root_cause_analysis": {
-        "primary_root_cause": "Corrosion in Pipe A due to high sulfur content.",
-        "identified_failure_modes": [
+      "process_evaluation": {
+        "process_id": "process_001",
+        "process_description": "Evaluation of process 001",
+        "process_performance": "Optimal"
+      },
+      "identified_failure_modes": {
+        "failure_modes": [
           {
             "failure_mode_id": "fm_001",
             "failure_mode_description": "Pipe Corrosion",
@@ -553,18 +549,26 @@ of their internal numeric AGE IDs, similar to nodes.
           }
         ]
       },
+      "performance_predictions": {
+        "prediction_id": "pred_001",
+        "prediction_description": "Performance prediction for node 123",
+        "predicted_performance": "Stable"
+      },
+      "regulatory_compliance": {
+        "compliance_id": "comp_001",
+        "compliance_description": "Compliance with regulation XYZ",
+        "compliance_status": "Compliant"
+      },
       "data_confidence": {
-        "overall_confidence_score": "0.85", // As a string, e.g., "0.75" for 75%
+        "overall_confidence_score": "0.85",
         "confidence_assessment_details": "Confidence is high based on available sensor data and maintenance logs.",
         "data_gaps": ["Real-time corrosion sensor data missing for Pipe B"],
         "uncertainty_factors": ["Variability in feedstock quality"]
       },
-      "error_details": null // Or an RcaError object if an error occurred
+      "error_details": null
     }
     ```
   * **Response Body (Error):** If an error occurs during RCA, the `error_details` field in the `RcaResult` object (shown above) will be populated. In case of other server-side issues, a standard error response (e.g., 500 Internal Server Error) might be returned.
-  * **Angular Service Method:** `RcaService.performRca(observationInput: RcaObservationInput)`
-  * **Backend Handler:** `newAnalyzeRootCauseHandler` (in `backend/src/server.ts`, which utilizes `LangGraphRcaService`)
 
 ## Current Development Status
 
