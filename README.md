@@ -623,11 +623,7 @@ of their internal numeric AGE IDs, similar to nodes.
 * **Role**: Responsible for rendering and interacting with the graph
   visualization.
 * **Responsibilities**:
-<<<<<<< HEAD
-  * Fetching the initial graph data from `GraphDataService`. 
-=======
-  * Fetching the initial graph data from `GraphDataService`
->>>>>>> f80b20413e0bdd0c271061022c29bef5c2ab7185
+  * Fetching the initial graph data from `GraphDataService`.
   * Initializing and configuring the `vis-network` instance.
   * Rendering nodes and edges on an HTML5 canvas.
   * Handling user interactions within the graph (e.g., clicks, drags, zoom).
