@@ -19,7 +19,7 @@ import { GraphDataService } from './services/graph-data.service';
   styleUrl: './app.component.css'
 })
 export class AppComponent {
-  title = 'Sulfur Graph Explorer';
+  title = 'LangGraphRefineryDiagnostics';
 
   constructor(
     private graphDataService: GraphDataService
