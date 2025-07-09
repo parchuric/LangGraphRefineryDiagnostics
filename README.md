@@ -859,8 +859,7 @@ pg-graph/
 1. Navigate to the `backend` directory:
    `cd backend`
 
-2. Install dependencies:
-
+2. Install dependencies (if not already done):
    ```bash
    npm install
    ```
@@ -965,3 +964,37 @@ Contributions are welcome! Please follow these steps:
 
 This project is licensed under the MIT License - see the LICENSE file for
 details.
+
+## How to Run the Application
+
+### Running the Backend
+
+1. Open a terminal and navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+2. Install dependencies (if not already done):
+   ```bash
+   npm install
+   ```
+3. Start the backend server:
+   ```bash
+   npm start
+   ```
+   This will compile and launch the Node.js/Express backend. By default, it listens on the port specified in your environment variables or configuration.
+
+### Running the Frontend
+
+1. Open a new terminal and navigate to the project root directory:
+   ```bash
+   cd pg-graph
+   ```
+2. Install dependencies (if not already done):
+   ```bash
+   npm install
+   ```
+3. Start the Angular development server:
+   ```bash
+   ng serve
+   ```
+   This will start the Angular frontend at http://localhost:4200/ by default.
