@@ -15,4 +15,3 @@ export const appConfig: ApplicationConfig = {
     provideAnimations() // Add provideAnimations for Angular Material
   ]
 };
-

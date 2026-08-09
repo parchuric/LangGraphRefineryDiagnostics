@@ -6,4 +6,3 @@ export const routes: Routes = [
   { path: 'graph', component: GraphVisualizationComponent, title: 'Graph Explorer' },
   // Add other routes here as the application grows
 ];
-

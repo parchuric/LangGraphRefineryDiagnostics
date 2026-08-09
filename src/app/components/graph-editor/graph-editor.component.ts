@@ -477,4 +477,3 @@ export class GraphEditorComponent implements OnChanges, OnInit, OnDestroy { // I
     }
   }
 }
-

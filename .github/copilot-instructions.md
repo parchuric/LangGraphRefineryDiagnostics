@@ -14,4 +14,3 @@ Libraries to be used:
 Backend Interaction:
 - For now, Angular services will mock backend responses.
 - Later, these services will be updated to communicate with a real backend API that interacts with the Apache AGE database.
-

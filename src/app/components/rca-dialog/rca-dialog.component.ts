@@ -39,4 +39,3 @@ export class RcaDialogComponent {
     console.log('RcaDialogComponent data:', this.data);
   }
 }
-
