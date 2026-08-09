@@ -38,3 +38,4 @@ export class AppComponent {
 
   // handleRcaRequested method removed entirely
 }
+

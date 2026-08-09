@@ -386,3 +386,4 @@ export class RcaService {
     return of(scenarios).pipe(delay(200));
   }
 }
+
